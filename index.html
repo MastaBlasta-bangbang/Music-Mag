@@ -991,17 +991,29 @@
                     }
                     if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
 
+                    // If we have existing loops, ensure they are playing so we can hear them while overdubbing
+                    if (this.loopDuration > 0 && this.looperNodes.length === 0) {
+                        this.startPlayback();
+                    }
+
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                     this.looperStream = stream;
                     const source = this.audioCtx.createMediaStreamSource(stream);
                     
-                    // Use ScriptProcessor for easy single-file recording
+                    // 4096 buffer size for a balance between latency and performance
                     this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
                     this.recordSamples = [];
                     this.isRecording = true;
+                    this.recordStartTime = this.audioCtx.currentTime;
                     
                     source.connect(this.processor);
-                    this.processor.connect(this.audioCtx.destination); 
+                    
+                    // Connect to destination via a silent gain to keep onaudioprocess alive without feedback
+                    // unless monitoring is desired (could be a toggle, but for now silent is safer)
+                    const silentGain = this.audioCtx.createGain();
+                    silentGain.gain.value = 0; 
+                    this.processor.connect(silentGain);
+                    silentGain.connect(this.audioCtx.destination); 
 
                     this.processor.onaudioprocess = (e) => {
                         if (this.isRecording) {
@@ -1019,6 +1031,8 @@
 
             stopRecording() {
                 this.isRecording = false;
+                const stopTime = this.audioCtx.currentTime;
+
                 if (this.processor) {
                     this.processor.disconnect();
                     this.processor = null;
@@ -1028,7 +1042,6 @@
                     this.looperStream = null;
                 }
 
-                // Flatten recorded samples into a single buffer
                 const totalSamples = this.recordSamples.reduce((acc, val) => acc + val.length, 0);
                 if (totalSamples === 0) return;
 
@@ -1047,17 +1060,25 @@
                     this.masterStartTime = this.audioCtx.currentTime;
                     this.startPlayback();
                 } else {
-                    // Overdub: sync to loopDuration by trimming/padding
+                    // Overdub: Sync the new layer to the master loop
                     const targetLength = Math.floor(this.loopDuration * this.audioCtx.sampleRate);
                     const syncedBuffer = this.audioCtx.createBuffer(1, targetLength, this.audioCtx.sampleRate);
                     const syncedData = syncedBuffer.getChannelData(0);
                     
-                    // We assume the user stopped REC in sync with the loop.
-                    // Copy recorded data up to target length.
-                    syncedData.set(data.slice(0, targetLength));
+                    // Calculate where in the loop we started recording
+                    const startOffset = (this.recordStartTime - this.masterStartTime) % this.loopDuration;
+                    const startSample = Math.floor(startOffset * this.audioCtx.sampleRate);
+                    
+                    // Fill the synced buffer starting from the correct sample
+                    // This handles wrapping if the overdub spans across the loop boundary
+                    for (let i = 0; i < data.length; i++) {
+                        const targetIdx = (startSample + i) % targetLength;
+                        syncedData[targetIdx] += data[i]; // Mix it in
+                    }
                     
                     this.loopBuffers.push(syncedBuffer);
-                    this.addBufferToPlayback(syncedBuffer);
+                    // Re-start playback to ensure all nodes are perfectly aligned
+                    this.startPlayback();
                 }
                 render();
             }
