@@ -537,11 +537,14 @@
                 this.currentPitch = { note: '-', cents: 0 };
                 
                 // Looper State
-                this.recorder = null;
-                this.chunks = [];
-                this.loopUrl = null;
-                this.loopAudio = null;
                 this.isRecording = false;
+                this.loopBuffers = []; // Array of AudioBuffers
+                this.loopDuration = 0; // Length in seconds
+                this.looperNodes = []; // Playing source nodes
+                this.masterStartTime = 0;
+                this.recordSamples = [];
+                this.processor = null;
+                this.looperStream = null;
 
                 // Visualizer State
                 this.rootKey = 'E';
@@ -980,24 +983,33 @@
                 return sampleRate / T0;
             }
 
-            // --- LOOPER LOGIC ---
+            // --- LOOPER LOGIC (HIGH PRECISION) ---
             async startRecording() {
                 try {
+                    if (!this.audioCtx) {
+                        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
+
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    this.recorder = new MediaRecorder(stream);
-                    this.chunks = [];
-                    this.recorder.ondataavailable = (e) => {
-                        if (e.data.size > 0) this.chunks.push(e.data);
-                    };
-                    this.recorder.onstop = () => {
-                        const blob = new Blob(this.chunks, { type: 'audio/webm' });
-                        this.loopUrl = URL.createObjectURL(blob);
-                        stream.getTracks().forEach(track => track.stop());
-                        render(); // Re-render to show play controls
-                    };
-                    this.recorder.start();
+                    this.looperStream = stream;
+                    const source = this.audioCtx.createMediaStreamSource(stream);
+                    
+                    // Use ScriptProcessor for easy single-file recording
+                    this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
+                    this.recordSamples = [];
                     this.isRecording = true;
-                    this.loopUrl = null; // Clear old
+                    
+                    source.connect(this.processor);
+                    this.processor.connect(this.audioCtx.destination); 
+
+                    this.processor.onaudioprocess = (e) => {
+                        if (this.isRecording) {
+                            const input = e.inputBuffer.getChannelData(0);
+                            this.recordSamples.push(new Float32Array(input));
+                        }
+                    };
+
                     render();
                 } catch (err) {
                     console.error("Mic Error", err);
@@ -1006,14 +1018,85 @@
             }
 
             stopRecording() {
-                if (this.recorder && this.isRecording) {
-                    this.recorder.stop();
-                    this.isRecording = false;
+                this.isRecording = false;
+                if (this.processor) {
+                    this.processor.disconnect();
+                    this.processor = null;
                 }
+                if (this.looperStream) {
+                    this.looperStream.getTracks().forEach(t => t.stop());
+                    this.looperStream = null;
+                }
+
+                // Flatten recorded samples into a single buffer
+                const totalSamples = this.recordSamples.reduce((acc, val) => acc + val.length, 0);
+                if (totalSamples === 0) return;
+
+                const buffer = this.audioCtx.createBuffer(1, totalSamples, this.audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                let offset = 0;
+                for (const chunk of this.recordSamples) {
+                    data.set(chunk, offset);
+                    offset += chunk.length;
+                }
+
+                if (this.loopDuration === 0) {
+                    // First loop sets the master duration
+                    this.loopDuration = buffer.duration;
+                    this.loopBuffers.push(buffer);
+                    this.masterStartTime = this.audioCtx.currentTime;
+                    this.startPlayback();
+                } else {
+                    // Overdub: sync to loopDuration by trimming/padding
+                    const targetLength = Math.floor(this.loopDuration * this.audioCtx.sampleRate);
+                    const syncedBuffer = this.audioCtx.createBuffer(1, targetLength, this.audioCtx.sampleRate);
+                    const syncedData = syncedBuffer.getChannelData(0);
+                    
+                    // We assume the user stopped REC in sync with the loop.
+                    // Copy recorded data up to target length.
+                    syncedData.set(data.slice(0, targetLength));
+                    
+                    this.loopBuffers.push(syncedBuffer);
+                    this.addBufferToPlayback(syncedBuffer);
+                }
+                render();
+            }
+
+            startPlayback() {
+                this.stopPlayback();
+                this.loopBuffers.forEach(buffer => {
+                    this.addBufferToPlayback(buffer);
+                });
+            }
+
+            addBufferToPlayback(buffer) {
+                if (!this.audioCtx) return;
+                const source = this.audioCtx.createBufferSource();
+                source.buffer = buffer;
+                source.loop = true;
+                
+                // Sync logic: calculate offset based on masterStartTime
+                const now = this.audioCtx.currentTime;
+                const elapsed = now - this.masterStartTime;
+                const offset = elapsed % this.loopDuration;
+                
+                source.connect(this.audioCtx.destination);
+                source.start(0, offset);
+                this.looperNodes.push(source);
+            }
+
+            stopPlayback() {
+                this.looperNodes.forEach(n => {
+                    try { n.stop(); } catch(e) {}
+                });
+                this.looperNodes = [];
             }
 
             clearLoop() {
-                this.loopUrl = null;
+                this.stopPlayback();
+                this.loopBuffers = [];
+                this.loopDuration = 0;
+                this.masterStartTime = 0;
                 render();
             }
 
@@ -4180,40 +4263,46 @@
 
         function renderLooper() {
             const isRec = studio.isRecording;
-            const hasLoop = !!studio.loopUrl;
+            const loopCount = studio.loopBuffers.length;
+            const hasLoop = loopCount > 0;
 
             return `
                 <div class="h-full flex flex-col items-center justify-center bg-stone-800 rounded-xl border border-stone-700 p-8 shadow-inner relative overflow-hidden">
                     <div class="absolute top-4 right-4 opacity-20 text-white">${Icon('repeat', 'text-6xl')}</div>
                     
-                    <div class="flex items-center justify-center gap-8 mb-12">
+                    <div class="flex items-center justify-center gap-8 mb-8">
                          <!-- Tape Reels Animation -->
-                         <div class="w-32 h-32 rounded-full border-8 border-stone-700 bg-stone-900 flex items-center justify-center relative ${isRec || (hasLoop) ? 'animate-spin-[spin_3s_linear_infinite]' : ''}">
+                         <div class="w-32 h-32 rounded-full border-8 border-stone-700 bg-stone-900 flex items-center justify-center relative ${isRec || (hasLoop) ? 'animate-spin' : ''}" style="animation-duration: 3s;">
                             <div class="w-12 h-12 rounded-full bg-stone-800 border-2 border-stone-600"></div>
                             <div class="absolute w-full h-1 bg-transparent border-t-2 border-stone-600 top-1/2 -translate-y-1/2"></div>
                          </div>
-                         <div class="w-32 h-32 rounded-full border-8 border-stone-700 bg-stone-900 flex items-center justify-center relative ${isRec || (hasLoop) ? 'animate-spin-[spin_3s_linear_infinite]' : ''}">
+                         <div class="w-32 h-32 rounded-full border-8 border-stone-700 bg-stone-900 flex items-center justify-center relative ${isRec || (hasLoop) ? 'animate-spin' : ''}" style="animation-duration: 3s;">
                             <div class="w-12 h-12 rounded-full bg-stone-800 border-2 border-stone-600"></div>
                             <div class="absolute w-full h-1 bg-transparent border-t-2 border-stone-600 top-1/2 -translate-y-1/2"></div>
                          </div>
                     </div>
 
-                    ${hasLoop ? `
-                        <audio src="${studio.loopUrl}" controls loop class="w-full max-w-md mb-8 invert"></audio>
-                    ` : ''}
+                    <div class="text-center mb-8">
+                        ${hasLoop ? `
+                            <div class="text-cyan-400 font-bold uppercase tracking-widest text-sm mb-1">${loopCount} Layer${loopCount > 1 ? 's' : ''} Active</div>
+                            <div class="text-stone-500 text-xs">Loop Duration: ${studio.loopDuration.toFixed(2)}s</div>
+                        ` : `
+                            <div class="text-stone-500 font-bold uppercase tracking-widest text-sm">Empty Tape</div>
+                        `}
+                    </div>
 
-                    <div class="flex gap-4">
+                    <div class="flex flex-wrap justify-center gap-4">
                         ${!isRec ? `
-                            <button onclick="studio.startRecording()" class="bg-red-600 hover:bg-red-500 text-white px-8 py-4 rounded-full flex items-center gap-2 font-bold shadow-lg active:scale-95">
-                                ${Icon('record', 'text-xl')} REC
+                            <button onclick="studio.startRecording()" class="bg-red-600 hover:bg-red-500 text-white px-8 py-4 rounded-full flex items-center gap-2 font-bold shadow-lg active:scale-95 transition-all">
+                                ${Icon(hasLoop ? 'plus' : 'record', 'text-xl')} ${hasLoop ? 'OVERDUB' : 'START LOOP'}
                             </button>
                         ` : `
-                            <button onclick="studio.stopRecording()" class="bg-stone-700 hover:bg-stone-600 text-white px-8 py-4 rounded-full flex items-center gap-2 font-bold animate-pulse">
-                                ${Icon('stop', 'text-xl')} STOP
+                            <button onclick="studio.stopRecording()" class="bg-stone-700 hover:bg-stone-600 text-white px-8 py-4 rounded-full flex items-center gap-2 font-bold animate-pulse shadow-lg">
+                                ${Icon('stop', 'text-xl')} FINISH
                             </button>
                         `}
-                        <button onclick="studio.clearLoop()" ${!hasLoop ? 'disabled' : ''} class="bg-stone-900 border border-stone-600 text-stone-300 px-8 py-4 rounded-full font-bold disabled:opacity-50">
-                            Clear Tape
+                        <button onclick="studio.clearLoop()" ${!hasLoop ? 'disabled' : ''} class="bg-stone-900 border border-stone-600 text-stone-300 px-8 py-4 rounded-full font-bold disabled:opacity-50 hover:bg-stone-800 transition-colors">
+                            Clear All
                         </button>
                     </div>
                 </div>
