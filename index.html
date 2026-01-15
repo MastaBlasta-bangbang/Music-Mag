@@ -107,6 +107,7 @@
                 this.isPlayingMetronome = false;
                 this.isPlayingDrone = false;
                 this.isPlayingTrack = false;
+                this.isScaleDisplayPaused = false;
                 this.droneNote = 'A2';
                 this.activeTrack = null;
                 this.instrument = 'triangle'; // Default instrument
@@ -257,7 +258,7 @@
                 const scheduleAheadTime = 0.1;
 
                 while (this.nextNoteTime < this.ctx.currentTime + scheduleAheadTime) {
-                    this.scheduleNote(this.nextNoteTime);
+                    this.scheduleMetronomeNote(this.nextNoteTime);
                     this.nextNote();
                 }
                 this.metronomeInterval = setTimeout(() => this.scheduler(), lookahead);
@@ -268,7 +269,7 @@
                 this.nextNoteTime += secondsPerBeat;
             }
 
-            scheduleNote(time) {
+            scheduleMetronomeNote(time) {
                 const osc = this.ctx.createOscillator();
                 const gain = this.ctx.createGain();
                 osc.frequency.value = 1000;
@@ -316,6 +317,12 @@
                 clearTimeout(this.trackInterval);
                 this.isPlayingTrack = false;
                 this.activeTrack = null;
+                this.isScaleDisplayPaused = false;
+                render();
+            }
+
+            toggleScalePause() {
+                this.isScaleDisplayPaused = !this.isScaleDisplayPaused;
                 render();
             }
 
@@ -344,17 +351,19 @@
                     // Update current chord index if changed
                     if (newChordIndex !== this.currentChordIndex) {
                         this.currentChordIndex = newChordIndex;
-                        render(); // Re-render to update scale panel
+                        if (!this.isScaleDisplayPaused) render(); // Re-render to update scale panel
                     }
 
                     const chord = this.activeTrack.progression[this.currentChordIndex];
-                    this.scheduleChord(chord, this.nextChordTime);
+                    this.scheduleNote(chord, this.nextChordTime); // renamed from scheduleChord to keep it consistent
                     
-                    const drawTime = (this.nextChordTime - this.ctx.currentTime) * 1000;
-                    const idx = this.currentChordIndex;
-                    setTimeout(() => {
-                        updateJamVisualizer(chord, idx);
-                    }, Math.max(0, drawTime));
+                    if (!this.isScaleDisplayPaused) {
+                        const drawTime = (this.nextChordTime - this.ctx.currentTime) * 1000;
+                        const idx = this.currentChordIndex;
+                        setTimeout(() => {
+                            updateJamVisualizer(chord, idx);
+                        }, Math.max(0, drawTime));
+                    }
 
                     const beats = chord.beats; 
                     const secondsPerBeat = 60.0 / this.tempo;
@@ -367,7 +376,7 @@
                 }
             }
 
-            scheduleChord(chordObj, time) {
+            scheduleNote(chordObj, time) {
                 const duration = (chordObj.beats * (60.0 / this.tempo)) - 0.1; 
                 const notes = chordObj.notes; 
 
@@ -545,6 +554,10 @@
                 this.recordSamples = [];
                 this.processor = null;
                 this.looperStream = null;
+                this.looperGain = null; // Master gain for loops
+                this.loopVolume = 0.8;
+                this.isMonitoring = false;
+                this.monitorNode = null;
 
                 // Visualizer State
                 this.rootKey = 'E';
@@ -991,7 +1004,12 @@
                     }
                     if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
 
-                    // If we have existing loops, ensure they are playing so we can hear them while overdubbing
+                    if (!this.looperGain) {
+                        this.looperGain = this.audioCtx.createGain();
+                        this.looperGain.gain.value = this.loopVolume;
+                        this.looperGain.connect(this.audioCtx.destination);
+                    }
+
                     if (this.loopDuration > 0 && this.looperNodes.length === 0) {
                         this.startPlayback();
                     }
@@ -1000,7 +1018,13 @@
                     this.looperStream = stream;
                     const source = this.audioCtx.createMediaStreamSource(stream);
                     
-                    // 4096 buffer size for a balance between latency and performance
+                    if (this.isMonitoring) {
+                        this.monitorNode = this.audioCtx.createGain();
+                        this.monitorNode.gain.value = 0.5;
+                        source.connect(this.monitorNode);
+                        this.monitorNode.connect(this.audioCtx.destination);
+                    }
+
                     this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
                     this.recordSamples = [];
                     this.isRecording = true;
@@ -1008,8 +1032,6 @@
                     
                     source.connect(this.processor);
                     
-                    // Connect to destination via a silent gain to keep onaudioprocess alive without feedback
-                    // unless monitoring is desired (could be a toggle, but for now silent is safer)
                     const silentGain = this.audioCtx.createGain();
                     silentGain.gain.value = 0; 
                     this.processor.connect(silentGain);
@@ -1023,6 +1045,7 @@
                     };
 
                     render();
+                    this.updateLooperProgress();
                 } catch (err) {
                     console.error("Mic Error", err);
                     alert("Could not access microphone.");
@@ -1031,11 +1054,13 @@
 
             stopRecording() {
                 this.isRecording = false;
-                const stopTime = this.audioCtx.currentTime;
-
                 if (this.processor) {
                     this.processor.disconnect();
                     this.processor = null;
+                }
+                if (this.monitorNode) {
+                    this.monitorNode.disconnect();
+                    this.monitorNode = null;
                 }
                 if (this.looperStream) {
                     this.looperStream.getTracks().forEach(t => t.stop());
@@ -1054,30 +1079,24 @@
                 }
 
                 if (this.loopDuration === 0) {
-                    // First loop sets the master duration
                     this.loopDuration = buffer.duration;
                     this.loopBuffers.push(buffer);
                     this.masterStartTime = this.audioCtx.currentTime;
                     this.startPlayback();
                 } else {
-                    // Overdub: Sync the new layer to the master loop
                     const targetLength = Math.floor(this.loopDuration * this.audioCtx.sampleRate);
                     const syncedBuffer = this.audioCtx.createBuffer(1, targetLength, this.audioCtx.sampleRate);
                     const syncedData = syncedBuffer.getChannelData(0);
                     
-                    // Calculate where in the loop we started recording
                     const startOffset = (this.recordStartTime - this.masterStartTime) % this.loopDuration;
                     const startSample = Math.floor(startOffset * this.audioCtx.sampleRate);
                     
-                    // Fill the synced buffer starting from the correct sample
-                    // This handles wrapping if the overdub spans across the loop boundary
                     for (let i = 0; i < data.length; i++) {
                         const targetIdx = (startSample + i) % targetLength;
-                        syncedData[targetIdx] += data[i]; // Mix it in
+                        syncedData[targetIdx] += data[i];
                     }
                     
                     this.loopBuffers.push(syncedBuffer);
-                    // Re-start playback to ensure all nodes are perfectly aligned
                     this.startPlayback();
                 }
                 render();
@@ -1085,9 +1104,15 @@
 
             startPlayback() {
                 this.stopPlayback();
+                if (!this.looperGain) {
+                    this.looperGain = this.audioCtx.createGain();
+                    this.looperGain.gain.value = this.loopVolume;
+                    this.looperGain.connect(this.audioCtx.destination);
+                }
                 this.loopBuffers.forEach(buffer => {
                     this.addBufferToPlayback(buffer);
                 });
+                this.updateLooperProgress();
             }
 
             addBufferToPlayback(buffer) {
@@ -1096,12 +1121,11 @@
                 source.buffer = buffer;
                 source.loop = true;
                 
-                // Sync logic: calculate offset based on masterStartTime
                 const now = this.audioCtx.currentTime;
                 const elapsed = now - this.masterStartTime;
                 const offset = elapsed % this.loopDuration;
                 
-                source.connect(this.audioCtx.destination);
+                source.connect(this.looperGain);
                 source.start(0, offset);
                 this.looperNodes.push(source);
             }
@@ -1111,6 +1135,44 @@
                     try { n.stop(); } catch(e) {}
                 });
                 this.looperNodes = [];
+            }
+
+            undoLastLayer() {
+                if (this.loopBuffers.length > 0) {
+                    this.loopBuffers.pop();
+                    if (this.loopBuffers.length === 0) {
+                        this.clearLoop();
+                    } else {
+                        this.startPlayback();
+                    }
+                    render();
+                }
+            }
+
+            setLoopVolume(val) {
+                this.loopVolume = parseFloat(val);
+                if (this.looperGain) {
+                    this.looperGain.gain.setTargetAtTime(this.loopVolume, this.audioCtx.currentTime, 0.05);
+                }
+            }
+
+            toggleMonitoring() {
+                this.isMonitoring = !this.isMonitoring;
+                render();
+            }
+
+            updateLooperProgress() {
+                if (this.loopDuration === 0 || (this.looperNodes.length === 0 && !this.isRecording)) return;
+                
+                const progressEl = document.getElementById('loop-progress-bar');
+                if (progressEl) {
+                    const now = this.audioCtx.currentTime;
+                    const elapsed = now - this.masterStartTime;
+                    const percent = ((elapsed % this.loopDuration) / this.loopDuration) * 100;
+                    progressEl.style.width = percent + '%';
+                }
+                
+                requestAnimationFrame(() => this.updateLooperProgress());
             }
 
             clearLoop() {
@@ -3702,13 +3764,25 @@
              if (mode === 'guitar') {
                  const renderString = (startNote) => {
                      const startIdx = NOTES.indexOf(startNote);
-                     let html = `<div class="flex border-b border-stone-700/50 last:border-0 relative"><div class="w-8 border-r-4 border-stone-500 bg-stone-800 flex items-center justify-center text-[10px] text-stone-400 font-bold z-20 shrink-0">${startNote}</div>`;
-                     for (let i = 0; i < 13; i++) {
+                     const openNote = NOTES[startIdx];
+                     const isOpenHighlight = notesToHighlight.includes(openNote);
+                     const isOpenRoot = openNote === rootNote;
+
+                     let html = `<div class="flex border-b border-stone-700/50 last:border-0 relative">
+                        <!-- Open Note Area (Left of Nut) -->
+                        <div class="w-10 bg-stone-900 flex items-center justify-center relative z-20 shrink-0">
+                            ${isOpenHighlight ? `<div class="z-10 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold shadow-sm ${isOpenRoot ? 'bg-orange-500 text-white scale-125' : 'bg-stone-200 text-stone-900'}">${openNote}</div>` : `<span class="text-[10px] text-stone-500 font-bold">${startNote}</span>`}
+                        </div>
+                        <!-- The Nut -->
+                        <div class="w-2 border-r-4 border-stone-500 bg-stone-700 z-20 shrink-0"></div>`;
+                     
+                     // Loop through actual frets (1-12)
+                     for (let i = 1; i < 13; i++) {
                          const currentNote = NOTES[(startIdx + i) % 12];
                          const isHighlight = notesToHighlight.includes(currentNote);
                          const isRoot = currentNote === rootNote;
                          html += `
-                             <div class="flex-1 border-r border-stone-600 relative h-8 flex items-center justify-center">
+                             <div class="flex-1 border-r border-stone-600 relative h-7 flex items-center justify-center">
                                  <div class="absolute w-full h-[1px] bg-stone-500 z-0 top-1/2"></div>
                                  ${isHighlight ? `<div class="z-10 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold shadow-sm ${isRoot ? 'bg-orange-500 text-white scale-125' : 'bg-stone-200 text-stone-900'}">${currentNote}</div>` : ''}
                              </div>`;
@@ -3717,8 +3791,8 @@
                      return html;
                  };
                  return `
-                     <div class="w-full bg-stone-900 border border-stone-700 rounded-lg p-4 overflow-x-auto shadow-inner">
-                          <div class="min-w-[300px]">
+                     <div class="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 overflow-x-auto shadow-inner">
+                          <div class="min-w-[300px] flex flex-col">
                              ${['E','B','G','D','A','E'].map(n => renderString(n)).join('')}
                           </div>
                      </div>`;
@@ -4071,7 +4145,14 @@
                                    <!-- Instrument View (existing Live View section) -->
                                    <div class="bg-stone-800 border border-stone-700 rounded-2xl p-4 h-64 flex flex-col relative overflow-hidden shadow-inner">
                                        <div class="flex justify-between items-center mb-4">
-                                            <h3 class="text-xs font-bold uppercase text-stone-500">Live View</h3>
+                                            <div class="flex items-center gap-3">
+                                                <h3 class="text-xs font-bold uppercase text-stone-500">Live View</h3>
+                                                ${active ? `
+                                                    <button onclick="audio.toggleScalePause()" class="px-2 py-1 rounded text-[10px] font-bold uppercase transition-all ${audio.isScaleDisplayPaused ? 'bg-orange-600 text-white' : 'bg-stone-700 text-stone-400 hover:text-white'}">
+                                                        ${audio.isScaleDisplayPaused ? Icon('play', 'mr-1') + 'Resume Visuals' : Icon('pause', 'mr-1') + 'Pause Visuals'}
+                                                    </button>
+                                                ` : ''}
+                                            </div>
                                             <div class="bg-stone-900 p-1 rounded-lg flex gap-1">
                                                <button onclick="appState.jamViewMode = 'guitar'; render()" class="p-1.5 rounded transition-all ${appState.jamViewMode === 'guitar' ? 'bg-stone-700 text-orange-400' : 'text-stone-500'}">
                                                    ${Icon('guitar', 'text-sm')}
@@ -4289,42 +4370,76 @@
 
             return `
                 <div class="h-full flex flex-col items-center justify-center bg-stone-800 rounded-xl border border-stone-700 p-8 shadow-inner relative overflow-hidden">
-                    <div class="absolute top-4 right-4 opacity-20 text-white">${Icon('repeat', 'text-6xl')}</div>
+                    <div class="absolute top-4 right-4 opacity-10 text-white">${Icon('repeat', 'text-6xl')}</div>
                     
-                    <div class="flex items-center justify-center gap-8 mb-8">
+                    <!-- Progress Bar (Top) -->
+                    ${hasLoop || isRec ? `
+                        <div class="absolute top-0 left-0 right-0 h-1.5 bg-stone-900">
+                            <div id="loop-progress-bar" class="h-full bg-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.8)] transition-all duration-75" style="width: 0%"></div>
+                        </div>
+                    ` : ''}
+
+                    <div class="flex items-center justify-center gap-8 mb-6 mt-4">
                          <!-- Tape Reels Animation -->
-                         <div class="w-32 h-32 rounded-full border-8 border-stone-700 bg-stone-900 flex items-center justify-center relative ${isRec || (hasLoop) ? 'animate-spin' : ''}" style="animation-duration: 3s;">
-                            <div class="w-12 h-12 rounded-full bg-stone-800 border-2 border-stone-600"></div>
+                         <div class="w-24 h-24 md:w-32 md:h-32 rounded-full border-8 border-stone-700 bg-stone-900 flex items-center justify-center relative ${isRec || (hasLoop) ? 'animate-spin' : ''}" style="animation-duration: 3s;">
+                            <div class="w-10 h-10 rounded-full bg-stone-800 border-2 border-stone-600"></div>
                             <div class="absolute w-full h-1 bg-transparent border-t-2 border-stone-600 top-1/2 -translate-y-1/2"></div>
                          </div>
-                         <div class="w-32 h-32 rounded-full border-8 border-stone-700 bg-stone-900 flex items-center justify-center relative ${isRec || (hasLoop) ? 'animate-spin' : ''}" style="animation-duration: 3s;">
-                            <div class="w-12 h-12 rounded-full bg-stone-800 border-2 border-stone-600"></div>
+                         <div class="w-24 h-24 md:w-32 md:h-32 rounded-full border-8 border-stone-700 bg-stone-900 flex items-center justify-center relative ${isRec || (hasLoop) ? 'animate-spin' : ''}" style="animation-duration: 3s;">
+                            <div class="w-10 h-10 rounded-full bg-stone-800 border-2 border-stone-600"></div>
                             <div class="absolute w-full h-1 bg-transparent border-t-2 border-stone-600 top-1/2 -translate-y-1/2"></div>
                          </div>
                     </div>
 
-                    <div class="text-center mb-8">
+                    <div class="text-center mb-6">
                         ${hasLoop ? `
-                            <div class="text-cyan-400 font-bold uppercase tracking-widest text-sm mb-1">${loopCount} Layer${loopCount > 1 ? 's' : ''} Active</div>
-                            <div class="text-stone-500 text-xs">Loop Duration: ${studio.loopDuration.toFixed(2)}s</div>
+                            <div class="text-cyan-400 font-bold uppercase tracking-widest text-xs mb-1">${loopCount} Layer${loopCount > 1 ? 's' : ''} Active</div>
+                            <div class="text-stone-500 text-[10px] font-mono">${studio.loopDuration.toFixed(2)}s LOOP</div>
                         ` : `
-                            <div class="text-stone-500 font-bold uppercase tracking-widest text-sm">Empty Tape</div>
+                            <div class="text-stone-500 font-bold uppercase tracking-widest text-xs">Waiting for first take...</div>
                         `}
                     </div>
 
-                    <div class="flex flex-wrap justify-center gap-4">
+                    <!-- Main Controls -->
+                    <div class="flex flex-wrap justify-center gap-4 mb-8">
                         ${!isRec ? `
                             <button onclick="studio.startRecording()" class="bg-red-600 hover:bg-red-500 text-white px-8 py-4 rounded-full flex items-center gap-2 font-bold shadow-lg active:scale-95 transition-all">
                                 ${Icon(hasLoop ? 'plus' : 'record', 'text-xl')} ${hasLoop ? 'OVERDUB' : 'START LOOP'}
                             </button>
                         ` : `
-                            <button onclick="studio.stopRecording()" class="bg-stone-700 hover:bg-stone-600 text-white px-8 py-4 rounded-full flex items-center gap-2 font-bold animate-pulse shadow-lg">
+                            <button onclick="studio.stopRecording()" class="bg-stone-100 text-stone-900 px-8 py-4 rounded-full flex items-center gap-2 font-bold animate-pulse shadow-lg">
                                 ${Icon('stop', 'text-xl')} FINISH
                             </button>
                         `}
-                        <button onclick="studio.clearLoop()" ${!hasLoop ? 'disabled' : ''} class="bg-stone-900 border border-stone-600 text-stone-300 px-8 py-4 rounded-full font-bold disabled:opacity-50 hover:bg-stone-800 transition-colors">
-                            Clear All
-                        </button>
+                        
+                        <div class="flex gap-2">
+                            <button onclick="studio.undoLastLayer()" ${!hasLoop ? 'disabled' : ''} class="bg-stone-700 hover:bg-stone-600 text-white p-4 rounded-full font-bold disabled:opacity-30 transition-colors" title="Undo Last Layer">
+                                ${Icon('arrow-u-up-left', 'text-xl')}
+                            </button>
+                            <button onclick="studio.clearLoop()" ${!hasLoop ? 'disabled' : ''} class="bg-stone-900 border border-stone-600 text-stone-300 p-4 rounded-full font-bold disabled:opacity-30 hover:bg-red-900/30 hover:text-red-400 hover:border-red-900 transition-all" title="Clear All">
+                                ${Icon('trash', 'text-xl')}
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Mixer & Settings -->
+                    <div class="w-full max-w-sm grid grid-cols-2 gap-6 pt-6 border-t border-stone-700/50">
+                        <div class="flex flex-col gap-2">
+                             <div class="flex justify-between items-center">
+                                <label class="text-[10px] font-bold uppercase text-stone-500">Loop Vol</label>
+                                <span class="text-[10px] font-mono text-cyan-400">${Math.round(studio.loopVolume * 100)}%</span>
+                             </div>
+                             <input type="range" min="0" max="1" step="0.01" value="${studio.loopVolume}" 
+                                oninput="studio.setLoopVolume(this.value); this.previousElementSibling.lastElementChild.innerText = Math.round(this.value * 100) + '%'" 
+                                class="w-full accent-cyan-500 h-1 bg-stone-900 rounded-lg appearance-none cursor-pointer"/>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                             <label class="text-[10px] font-bold uppercase text-stone-500">Monitor</label>
+                             <button onclick="studio.toggleMonitoring()" class="flex items-center justify-between px-3 py-1.5 rounded bg-stone-900 border border-stone-700 text-[10px] font-bold uppercase transition-all ${studio.isMonitoring ? 'text-green-400 border-green-900 bg-green-900/10' : 'text-stone-500'}">
+                                <span>Input ${studio.isMonitoring ? 'On' : 'Off'}</span>
+                                <div class="w-2 h-2 rounded-full ${studio.isMonitoring ? 'bg-green-500 animate-pulse' : 'bg-stone-700'}"></div>
+                             </button>
+                        </div>
                     </div>
                 </div>
             `;
@@ -4360,17 +4475,36 @@
             // Guitar Render Helper
             const renderString = (startNote, isCommonFn) => {
                 const startIdx = NOTES.indexOf(startNote);
+                const openNote = NOTES[startIdx];
+                const inScaleOpen = isNoteInScale(openNote);
+                const rootOpen = isRoot(openNote);
+                const commonOpen = isCommonFn ? isCommonFn(openNote) : false;
+
                 let html = `<div class="flex border-b border-stone-700/50 last:border-0 relative">
-                    <div class="w-10 border-r-4 border-stone-400 bg-stone-800 flex items-center justify-center text-[10px] text-stone-400 font-bold z-20 shrink-0">${startNote}</div>`;
+                    <!-- Open Note Area (Left of Nut) -->
+                    <div class="w-10 bg-stone-900 flex items-center justify-center relative z-20 shrink-0">
+                        ${commonOpen ? `<div class="absolute w-8 h-8 rounded-full border-2 border-red-500 bg-red-500/20 z-0 animate-pulse pointer-events-none"></div>` : ''}
+                        
+                        ${inScaleOpen ? `
+                            <div class="z-10 w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold shadow-sm transition-all relative
+                            ${rootOpen ? 'bg-cyan-500 text-stone-900 scale-125' : 'bg-stone-700 text-stone-200 border border-stone-500'}
+                            ${commonOpen ? 'ring-2 ring-red-500 ring-offset-2 ring-offset-stone-800' : ''}">
+                                ${openNote}
+                            </div>
+                        ` : (commonOpen ? `<div class="z-10 w-4 h-4 rounded-full bg-red-600 flex items-center justify-center text-[7px] font-bold text-white shadow-lg relative">${openNote}</div>` : `<span class="text-[10px] text-stone-500 font-bold">${startNote}</span>`)}
+                    </div>
+                    <!-- The Nut -->
+                    <div class="w-2 border-r-4 border-stone-400 bg-stone-600 z-20 shrink-0"></div>`;
                 
-                for (let i = 0; i < 13; i++) {
+                // Loop through actual frets (1-12)
+                for (let i = 1; i < 13; i++) {
                     const currentNote = NOTES[(startIdx + i) % 12];
                     const inScale = isNoteInScale(currentNote);
                     const root = isRoot(currentNote);
                     const common = isCommonFn ? isCommonFn(currentNote) : false;
                     
                     html += `
-                        <div class="flex-1 border-r border-stone-600 relative h-10 flex items-center justify-center">
+                        <div class="flex-1 border-r border-stone-600 relative h-8 flex items-center justify-center">
                             <div class="absolute w-full h-[1px] bg-stone-500 z-0 top-1/2"></div>
                             
                             ${common ? `
@@ -4990,7 +5124,7 @@
 
                     <div class="px-4 md:px-12 mb-16">
                         <div class="max-w-2xl mx-auto">
-                            <p class="text-lg md:text-xl leading-relaxed text-stone-800 dark:text-stone-200 font-serif drop-cap">
+                            <p class="text-lg md:text-xl leading-relaxed text-stone-800 dark:text-stone-200 font-serif">
                                 <span class="float-left text-6xl font-black font-serif mr-3 mt-[-8px] text-stone-900 dark:text-white">${m.origin.charAt(0)}</span>
                                 ${m.origin.slice(1)}
                             </p>
