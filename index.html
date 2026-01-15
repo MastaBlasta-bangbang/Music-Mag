@@ -3758,7 +3758,10 @@
         }
 
         function renderJamInstrument(chordNotes, mode) {
-             const notesToHighlight = chordNotes.map(n => n.slice(0, -1)); // 'C', 'E', 'G'
+             const notesToHighlight = chordNotes.map(n => {
+                 // Handle both 'C3' and 'C' formats
+                 return /[\d]$/.test(n) ? n.slice(0, -1) : n;
+             });
              const rootNote = notesToHighlight[0];
 
              if (mode === 'guitar') {
@@ -4127,8 +4130,16 @@
                                    <div class="bg-black/50 border-2 border-stone-800 rounded-2xl p-8 h-64 flex items-center justify-center relative overflow-hidden shadow-inner">
                                        ${active ? `
                                            <div id="jam-visualizer" class="w-full h-full flex items-center justify-center">
-                                               <!-- Dynamic content injected by scheduler -->
-                                               <div class="text-stone-500 font-mono animate-pulse">Waiting for downbeat...</div>
+                                               ${(() => {
+                                                   const chord = active.progression[audio.currentChordIndex];
+                                                   return `
+                                                        <div class="text-center animate-fade-in">
+                                                            <div class="text-sm font-bold uppercase tracking-widest text-orange-500 mb-2">Current Chord</div>
+                                                            <div class="text-6xl font-black font-serif text-white mb-2">${chord.name}</div>
+                                                            <div class="text-xl text-stone-400 italic font-serif">${chord.theory}</div>
+                                                        </div>
+                                                   `;
+                                               })()}
                                            </div>
                                            <div class="absolute bottom-4 right-4 flex items-center gap-2">
                                                 <span class="text-xs font-bold uppercase text-stone-500">BPM</span>
@@ -4162,8 +4173,12 @@
                                                </button>
                                            </div>
                                        </div>
-                                       <div id="jam-instrument-display" class="flex-1 flex items-center justify-center text-stone-600 text-xs">
-                                           ${active ? '<div class="text-stone-600 text-sm">Waiting for playback...</div>' : '<div class="text-stone-600 text-sm">Select a track</div>'}
+                                       <div id="jam-instrument-display" class="flex-1 flex items-center justify-center text-stone-600 text-xs overflow-hidden">
+                                           ${active ? (
+                                               audio.isScaleDisplayPaused 
+                                               ? renderJamInstrument(studio.getScaleNotes(), appState.jamViewMode)
+                                               : renderJamInstrument(active.progression[audio.currentChordIndex].notes, appState.jamViewMode)
+                                           ) : '<div class="text-stone-600 text-sm">Select a track</div>'}
                                        </div>
                                    </div>
                                </div>
