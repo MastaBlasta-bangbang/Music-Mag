@@ -487,13 +487,42 @@
             }
 
             createVoice(freq, time, duration, vol, pan) {
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
                 const panner = this.ctx.createStereoPanner();
-
-                osc.type = this.instrument; 
-                osc.frequency.value = freq;
+                const gain = this.ctx.createGain();
                 panner.pan.value = pan;
+
+                let source;
+                let filter;
+
+                if (this.workletReady) {
+                    // --- HIGH QUALITY RUST ENGINE ---
+                    source = new AudioWorkletNode(this.ctx, 'shed-processor', {
+                        parameterData: {
+                            frequency: freq,
+                            cutoff: this.brightness,
+                            resonance: 0.2
+                        }
+                    });
+                    // Automate filter sweep on the worklet parameter
+                    const cutoffParam = source.parameters.get('cutoff');
+                    cutoffParam.setValueAtTime(this.brightness, time);
+                    cutoffParam.exponentialRampToValueAtTime(800, time + duration);
+                    
+                    source.connect(gain);
+                } else {
+                    // --- FALLBACK ---
+                    source = this.ctx.createOscillator();
+                    source.type = this.instrument; 
+                    source.frequency.value = freq;
+
+                    filter = this.ctx.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.setValueAtTime(this.brightness, time); 
+                    filter.frequency.exponentialRampToValueAtTime(800, time + duration);
+
+                    source.connect(filter);
+                    filter.connect(gain);
+                }
 
                 // Envelope (ADSR-ish)
                 const attack = 0.02;
@@ -506,23 +535,14 @@
                 gain.gain.exponentialRampToValueAtTime(vol * sustain, time + attack + decay);
                 gain.gain.exponentialRampToValueAtTime(0.001, time + duration + release);
 
-                // Filter for warmer sound (Dynamic Brightness)
-                const filter = this.ctx.createBiquadFilter();
-                filter.type = 'lowpass';
-                filter.frequency.setValueAtTime(this.brightness, time); 
-                filter.frequency.exponentialRampToValueAtTime(800, time + duration); // Sweeps down
-
-                // Connections
-                osc.connect(filter);
-                filter.connect(gain);
                 gain.connect(panner);
                 
                 // Route to Master Effects Chain
-                panner.connect(this.masterGain); // Dry path
-                panner.connect(this.reverbGain); // Wet path
+                panner.connect(this.masterGain); 
+                panner.connect(this.reverbGain); 
 
-                osc.start(time);
-                osc.stop(time + duration + release + 0.1);
+                source.start(time);
+                if (source.stop) source.stop(time + duration + release + 0.1);
             }
         }
 
@@ -708,7 +728,7 @@
             }
 
             // --- MIXER LOGIC ---
-            togglePlay() {
+            async togglePlay() {
                 if (this.isPlaying) {
                     clearTimeout(this.timerID);
                     this.isPlaying = false;
@@ -718,16 +738,8 @@
                     this.beatsInCurrentChord = 0;
                     render();
                 } else {
-                    if (!this.jamCtx) {
-                        this.jamCtx = new (window.AudioContext || window.webkitAudioContext)();
-                        // Connect to global recorder if possible
-                        if (audio.recordingStreamDest) {
-                            const source = this.jamCtx.createMediaStreamDestination();
-                            // This is tricky because contexts are separate. 
-                            // Actually, let's just make sure jamCtx output is captured.
-                            // Better way: capture all destination nodes.
-                        }
-                    }
+                    await audio.init();
+                    this.jamCtx = audio.ctx; // Use the high-quality context
                     this.nextNoteTime = this.jamCtx.currentTime + 0.1;
                     this.isPlaying = true;
                     // Reset chord progression
@@ -858,27 +870,32 @@
             }
 
             playBass(time, freq, duration, vol) {
-                // Main Oscillator
-                const osc = this.jamCtx.createOscillator();
-                osc.type = this.bassWaveform;
-                osc.frequency.value = freq;
+                let osc;
+                let subOsc;
+                let filter;
 
-                // Sub Oscillator (one octave down)
-                const subOsc = this.jamCtx.createOscillator();
-                subOsc.type = 'sine';
-                subOsc.frequency.value = freq / 2;
+                if (audio.workletReady) {
+                    // --- HIGH QUALITY BASS ENGINE ---
+                    osc = new AudioWorkletNode(this.jamCtx, 'shed-processor', {
+                        parameterData: { frequency: freq, cutoff: this.bassFilterCutoff, resonance: this.bassFilterResonance / 20 }
+                    });
+                    subOsc = new AudioWorkletNode(this.jamCtx, 'shed-processor', {
+                        parameterData: { frequency: freq / 2, cutoff: 2000, resonance: 0 }
+                    });
+                } else {
+                    // Fallback
+                    osc = this.jamCtx.createOscillator();
+                    osc.type = this.bassWaveform;
+                    osc.frequency.value = freq;
 
-                // Filter
-                const filter = this.jamCtx.createBiquadFilter();
-                filter.type = 'lowpass';
-                filter.frequency.value = this.bassFilterCutoff;
-                filter.Q.value = this.bassFilterResonance;
+                    subOsc = this.jamCtx.createOscillator();
+                    subOsc.type = 'sine';
+                    subOsc.frequency.value = freq / 2;
 
-                // Distortion (if enabled)
-                let distortion = null;
-                if (this.bassDistortion > 0) {
-                    distortion = this.jamCtx.createWaveShaper();
-                    distortion.curve = this.makeDistortionCurve(this.bassDistortion * 100);
+                    filter = this.jamCtx.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.value = this.bassFilterCutoff;
+                    filter.Q.value = this.bassFilterResonance;
                 }
 
                 // Gain nodes
@@ -899,23 +916,22 @@
                 osc.connect(mainGain);
                 subOsc.connect(subGain);
 
-                if (distortion) {
-                    mainGain.connect(distortion);
-                    subGain.connect(distortion);
-                    distortion.connect(filter);
+                if (audio.workletReady) {
+                    mainGain.connect(masterGain);
+                    subGain.connect(masterGain);
                 } else {
                     mainGain.connect(filter);
                     subGain.connect(filter);
+                    filter.connect(masterGain);
                 }
 
-                filter.connect(masterGain);
                 masterGain.connect(this.jamCtx.destination);
+                if (audio.recordingStreamDest) masterGain.connect(audio.recordingStreamDest);
 
-                // Start and stop
                 osc.start(time);
                 subOsc.start(time);
-                osc.stop(time + duration + this.bassRelease + 0.1);
-                subOsc.stop(time + duration + this.bassRelease + 0.1);
+                if (osc.stop) osc.stop(time + duration + this.bassRelease + 0.1);
+                if (subOsc.stop) subOsc.stop(time + duration + this.bassRelease + 0.1);
             }
 
             makeDistortionCurve(amount) {
@@ -938,6 +954,7 @@
                 gain.gain.exponentialRampToValueAtTime(0.01, time + this.kickDecay);
                 osc.connect(gain);
                 gain.connect(this.jamCtx.destination);
+                if (audio.recordingStreamDest) gain.connect(audio.recordingStreamDest);
                 osc.start(time);
                 osc.stop(time + this.kickDecay);
             }
@@ -969,6 +986,7 @@
                 noiseGain.connect(mixGain);
                 toneGain.connect(mixGain);
                 mixGain.connect(this.jamCtx.destination);
+                if (audio.recordingStreamDest) mixGain.connect(audio.recordingStreamDest);
 
                 noise.start(time);
                 osc.start(time);
@@ -988,6 +1006,7 @@
                 osc.connect(filter);
                 filter.connect(gain);
                 gain.connect(this.jamCtx.destination);
+                if (audio.recordingStreamDest) gain.connect(audio.recordingStreamDest);
                 osc.start(time);
                 osc.stop(time + this.hihatDecay);
             }
@@ -1001,6 +1020,7 @@
                 gain.gain.exponentialRampToValueAtTime(0.01, time + duration);
                 osc.connect(gain);
                 gain.connect(this.jamCtx.destination);
+                if (audio.recordingStreamDest) gain.connect(audio.recordingStreamDest);
                 osc.start(time);
                 osc.stop(time + duration);
             }
