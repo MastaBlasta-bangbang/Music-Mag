@@ -111,19 +111,42 @@
                 this.droneNote = 'A2';
                 this.activeTrack = null;
                 this.instrument = 'triangle'; // Default instrument
+                this.workletReady = false;
+
+                // Global Recording State
+                this.globalRecorder = null;
+                this.globalChunks = [];
+                this.isGlobalRecording = false;
+                this.recordingStreamDest = null;
             }
 
-            init() {
+            async init() {
                 if (!this.ctx) {
                     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
                     this.setupAudioGraph();
+                    await this.setupWorklet();
                 }
                 if (this.ctx.state === 'suspended') {
-                    this.ctx.resume();
+                    await this.ctx.resume();
+                }
+            }
+
+            async setupWorklet() {
+                try {
+                    // Try to load the worklet. If running on file:// this may fail.
+                    await this.ctx.audioWorklet.addModule('src/worklet.js');
+                    this.workletReady = true;
+                    console.log("SHED High-Quality Audio Engine Loaded.");
+                } catch (e) {
+                    console.warn("Worklet failed to load (CORS/file://?), using standard engine.", e);
+                    this.workletReady = false;
                 }
             }
 
             setupAudioGraph() {
+                // Create a destination for the global recorder
+                this.recordingStreamDest = this.ctx.createMediaStreamDestination();
+
                 // Master Bus -> Compressor -> Destination
                 this.masterGain = this.ctx.createGain();
                 this.masterGain.gain.value = 0.6; 
@@ -145,9 +168,48 @@
                 this.masterGain.connect(this.compressor);
                 this.compressor.connect(this.ctx.destination);
                 
+                // ALSO connect compressor to our recording destination
+                this.compressor.connect(this.recordingStreamDest);
+                
                 // Reverb Send (Parallel)
                 this.reverbGain.connect(this.reverbNode);
-                this.reverbNode.connect(this.compressor); // Mix reverb back into compressor
+                this.reverbNode.connect(this.compressor); 
+            }
+
+            toggleGlobalRecording() {
+                this.init();
+                if (this.isGlobalRecording) {
+                    this.stopGlobalRecording();
+                } else {
+                    this.startGlobalRecording();
+                }
+            }
+
+            startGlobalRecording() {
+                this.globalChunks = [];
+                this.globalRecorder = new MediaRecorder(this.recordingStreamDest.stream);
+                this.globalRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) this.globalChunks.push(e.data);
+                };
+                this.globalRecorder.onstop = () => {
+                    const blob = new Blob(this.globalChunks, { type: 'audio/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `TheShed_Session_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.webm`;
+                    a.click();
+                };
+                this.globalRecorder.start();
+                this.isGlobalRecording = true;
+                render();
+            }
+
+            stopGlobalRecording() {
+                if (this.globalRecorder && this.isGlobalRecording) {
+                    this.globalRecorder.stop();
+                    this.isGlobalRecording = false;
+                    render();
+                }
             }
 
             setReverb(val) {
@@ -194,8 +256,8 @@
                 return notes[note] || 110.00;
             }
 
-            toggleDrone(note) {
-                this.init();
+            async toggleDrone(note) {
+                await this.init();
                 if (this.isPlayingDrone) {
                     this.stopDrone();
                     if (this.droneNote !== note) {
@@ -209,20 +271,36 @@
             }
 
             startDrone() {
-                this.droneOsc = this.ctx.createOscillator();
-                this.droneOsc.type = 'sawtooth';
-                this.droneOsc.frequency.value = this.getFreq(this.droneNote);
-                
-                const filter = this.ctx.createBiquadFilter();
-                filter.type = 'lowpass';
-                filter.frequency.value = 400;
+                if (this.workletReady) {
+                    // --- HIGH QUALITY RUST-STYLE ENGINE ---
+                    this.droneOsc = new AudioWorkletNode(this.ctx, 'shed-processor', {
+                        parameterData: {
+                            frequency: this.getFreq(this.droneNote),
+                            cutoff: 400,
+                            resonance: 0.6
+                        }
+                    });
+                    this.droneGain = this.ctx.createGain();
+                    this.droneGain.gain.value = 0.15;
+                    this.droneOsc.connect(this.droneGain);
+                    this.droneGain.connect(this.ctx.destination);
+                } else {
+                    // --- FALLBACK TO STANDARD ---
+                    this.droneOsc = this.ctx.createOscillator();
+                    this.droneOsc.type = 'sawtooth';
+                    this.droneOsc.frequency.value = this.getFreq(this.droneNote);
+                    
+                    const filter = this.ctx.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.value = 400;
 
-                this.droneGain = this.ctx.createGain();
-                this.droneGain.gain.value = 0.15;
+                    this.droneGain = this.ctx.createGain();
+                    this.droneGain.gain.value = 0.15;
 
-                this.droneOsc.connect(filter);
-                filter.connect(this.droneGain);
-                this.droneGain.connect(this.ctx.destination); // Drone bypasses master effects (keeps it raw/clean)
+                    this.droneOsc.connect(filter);
+                    filter.connect(this.droneGain);
+                    this.droneGain.connect(this.ctx.destination); 
+                }
                 
                 this.droneOsc.start();
                 this.isPlayingDrone = true;
@@ -233,8 +311,18 @@
                 if (this.droneOsc) {
                     const now = this.ctx.currentTime;
                     this.droneGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-                    this.droneOsc.stop(now + 0.5);
-                    this.droneOsc = null;
+                    
+                    if (this.droneOsc.stop) {
+                        this.droneOsc.stop(now + 0.5);
+                    } else {
+                        // For AudioWorkletNode, just disconnect after ramp
+                        setTimeout(() => {
+                            if (this.droneOsc) this.droneOsc.disconnect();
+                            this.droneOsc = null;
+                        }, 500);
+                    }
+                    
+                    if (this.droneOsc && this.droneOsc.stop) this.droneOsc = null;
                 }
                 this.isPlayingDrone = false;
                 renderToolbar();
@@ -604,6 +692,19 @@
                 this.selectedProgression = null; // Will hold a backing track progression
                 this.currentChordIndex = 0;
                 this.beatsInCurrentChord = 0;
+
+                // Creative Spark State
+                this.spark = {
+                    progression: null,
+                    mood: null,
+                    constraint: null
+                };
+
+                // Note Hunt State
+                this.noteHuntActive = false;
+                this.targetNote = null;
+                this.huntScore = 0;
+                this.lastHuntTime = 0;
             }
 
             // --- MIXER LOGIC ---
@@ -617,7 +718,16 @@
                     this.beatsInCurrentChord = 0;
                     render();
                 } else {
-                    if (!this.jamCtx) this.jamCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (!this.jamCtx) {
+                        this.jamCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        // Connect to global recorder if possible
+                        if (audio.recordingStreamDest) {
+                            const source = this.jamCtx.createMediaStreamDestination();
+                            // This is tricky because contexts are separate. 
+                            // Actually, let's just make sure jamCtx output is captured.
+                            // Better way: capture all destination nodes.
+                        }
+                    }
                     this.nextNoteTime = this.jamCtx.currentTime + 0.1;
                     this.isPlaying = true;
                     // Reset chord progression
@@ -940,6 +1050,10 @@
                     const value = NOTES[roundedNote % 12];
                     const centDiff = Math.floor((noteNum - roundedNote) * 100);
                     this.currentPitch = { note: value, cents: centDiff };
+                    
+                    if (this.noteHuntActive) {
+                        this.checkHuntMatch(value);
+                    }
                 } else {
                     // Optional: Decay old note or keep last known?
                     // keeping last known makes it less jittery, but '-' is clearer for silence
@@ -1008,6 +1122,10 @@
                         this.looperGain = this.audioCtx.createGain();
                         this.looperGain.gain.value = this.loopVolume;
                         this.looperGain.connect(this.audioCtx.destination);
+                        // Connect to global recorder if possible
+                        if (audio.recordingStreamDest) {
+                            this.looperGain.connect(audio.recordingStreamDest);
+                        }
                     }
 
                     if (this.loopDuration > 0 && this.looperNodes.length === 0) {
@@ -1181,6 +1299,140 @@
                 this.loopDuration = 0;
                 this.masterStartTime = 0;
                 render();
+            }
+
+            // --- CREATIVE SPARK LOGIC ---
+            generateSpark() {
+                const progressions = [
+                    { name: "The Standard", pattern: "I - IV - V - I", desc: "Solid and reliable foundation.", chords: ['C Major', 'F Major', 'G Major', 'C Major'] },
+                    { name: "The Emotional", pattern: "vi - IV - I - V", desc: "The 'Axis of Awesome' emotional curve.", chords: ['A Minor', 'F Major', 'C Major', 'G Major'] },
+                    { name: "The Jazz Turn", pattern: "ii - V - I - vi", desc: "A smooth, cycling turnaround.", chords: ['D Minor 7', 'G Dominant 7', 'C Major 7', 'A Minor 7'] },
+                    { name: "The Modal Drift", pattern: "I - bVII - IV - I", desc: "Mixolydian rock vibes.", chords: ['C Major', 'Bb Major', 'F Major', 'C Major'] },
+                    { name: "The Dark Descender", pattern: "i - bVII - bVI - V", desc: "Classic minor key tension.", chords: ['C Minor', 'Bb Major', 'Ab Major', 'G Major'] }
+                ];
+                const moods = [
+                    "Cinematic Noir", "Late Night Neo-Soul", "Gritty Garage Rock", 
+                    "Ethereal Dream-Pop", "Sun-Drenched Funk", "Cyberpunk Industrial"
+                ];
+                const constraints = [
+                    "No using the Root note in your melody.",
+                    "All rhythms must be strictly 16th notes.",
+                    "You must include a wide interval jump (5th or Octave) in every phrase.",
+                    "Only play on the 'off-beats'.",
+                    "Limit yourself to only 3 notes for the entire idea.",
+                    "One string only for the melody."
+                ];
+
+                this.spark = {
+                    progression: progressions[Math.floor(Math.random() * progressions.length)],
+                    mood: moods[Math.floor(Math.random() * moods.length)],
+                    constraint: constraints[Math.floor(Math.random() * constraints.length)]
+                };
+                render();
+            }
+
+            loadSparkToJam(destination = 'studio') {
+                if (!this.spark.progression) return;
+
+                // Create a temporary track object
+                const sparkTrack = {
+                    id: 'spark-' + Date.now(),
+                    title: `Spark: ${this.spark.mood}`,
+                    genre: 'Spark',
+                    bpm: 100,
+                    key: 'C',
+                    isSpark: true,
+                    sparkData: JSON.parse(JSON.stringify(this.spark)), // Deep copy
+                    overallScales: [{ root: 'C', type: 'major', label: 'C Major' }],
+                    description: `${this.spark.constraint} | ${this.spark.progression.name}`,
+                    progression: this.spark.progression.chords.map(c => {
+                        // Simple note mapping for Spark
+                        let notes = ['C3', 'E3', 'G3'];
+                        if (c.includes('F')) notes = ['F2', 'A2', 'C3'];
+                        if (c.includes('G')) notes = ['G2', 'B2', 'D3'];
+                        if (c.includes('A')) notes = ['A2', 'C3', 'E3'];
+                        if (c.includes('Bb')) notes = ['Bb2', 'D3', 'F3'];
+                        if (c.includes('Ab')) notes = ['Ab2', 'C3', 'Eb3'];
+                        if (c.includes('D')) notes = ['D3', 'F3', 'A3'];
+                        
+                        return { name: c, beats: 4, notes: notes, theory: 'Spark Chord' };
+                    })
+                };
+
+                if (destination === 'jam') {
+                    audio.playBackingTrack(sparkTrack);
+                } else {
+                    this.selectedProgression = sparkTrack.progression;
+                    this.currentChordIndex = 0;
+                    this.beatsInCurrentChord = 0;
+                    setStudioModule('jamstation');
+                    if (!this.isPlaying) this.togglePlay();
+                }
+            }
+
+            generateAndPlaySpark() {
+                this.generateSpark();
+                this.loadSparkToJam('jam');
+            }
+
+            saveCurrentSpark() {
+                const active = audio.activeTrack;
+                if (!active || !active.isSpark) {
+                    if (this.spark.progression) {
+                        // If no active track, save the currently generated spark in state
+                        const newSpark = {
+                            id: 'spark-' + Date.now(),
+                            title: `Spark: ${this.spark.mood}`,
+                            isSpark: true,
+                            sparkData: JSON.parse(JSON.stringify(this.spark))
+                        };
+                        appState.savedSparks.push(newSpark);
+                        localStorage.setItem('theshed_sparks', JSON.stringify(appState.savedSparks));
+                        render();
+                    }
+                    return;
+                }
+                
+                // Save the active track
+                appState.savedSparks.push(active);
+                localStorage.setItem('theshed_sparks', JSON.stringify(appState.savedSparks));
+                render();
+            }
+
+            deleteSpark(id) {
+                appState.savedSparks = appState.savedSparks.filter(s => s.id !== id);
+                localStorage.setItem('theshed_sparks', JSON.stringify(appState.savedSparks));
+                render();
+            }
+
+            // --- NOTE HUNT LOGIC ---
+            async toggleNoteHunt() {
+                if (this.noteHuntActive) {
+                    this.noteHuntActive = false;
+                    this.stopTuner(); // Reuse tuner's pitch detection
+                } else {
+                    this.noteHuntActive = true;
+                    this.huntScore = 0;
+                    this.generateTargetNote();
+                    await this.startTuner();
+                }
+                render();
+            }
+
+            generateTargetNote() {
+                const scaleNotes = this.getScaleNotes();
+                this.targetNote = scaleNotes[Math.floor(Math.random() * scaleNotes.length)];
+                this.lastHuntTime = Date.now();
+            }
+
+            checkHuntMatch(detectedNote) {
+                if (!this.noteHuntActive || !this.targetNote) return;
+                
+                if (detectedNote === this.targetNote) {
+                    this.huntScore++;
+                    this.generateTargetNote();
+                    render(); // Re-render to show new target and score
+                }
             }
 
             // --- VISUALIZER HELPER ---
@@ -3675,9 +3927,12 @@
             theme: 'light',
             menuOpen: false,
             savedLessons: JSON.parse(localStorage.getItem('theshed_saved') || '[]'),
+            savedSparks: JSON.parse(localStorage.getItem('theshed_sparks') || '[]'),
             timer: null,
             timeLeft: 0,
-            timerActive: false
+            timerActive: false,
+            isRoutineActive: false,
+            routineIndex: 0
         };
 
         const app = document.getElementById('app');
@@ -3700,7 +3955,26 @@
         }
 
         function getCurrentChallenges() {
-            return appState.mode === 'musician' ? MUSICIAN_CHALLENGES : PRODUCER_CHALLENGES;
+            const staticList = appState.mode === 'musician' ? MUSICIAN_CHALLENGES : PRODUCER_CHALLENGES;
+            const relevantVolumes = appState.mode === 'musician' ? VOLUMES : PRODUCER_VOLUMES;
+            
+            // Extract challenges from artist objects
+            const dynamicList = relevantVolumes.flatMap(vol => 
+                vol.musicians
+                    .filter(m => m.artistChallenge)
+                    .map(m => ({
+                        id: `ART-${m.id}`,
+                        title: m.artistChallenge.title,
+                        artist: m.name,
+                        text: m.artistChallenge.description
+                    }))
+            );
+
+            // Combine and remove duplicates based on title
+            const combined = [...staticList, ...dynamicList];
+            const unique = combined.filter((v, i, a) => a.findIndex(t => t.title === v.title) === i);
+            
+            return unique;
         }
 
         function toggleTheme() {
@@ -3874,6 +4148,10 @@
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
+                        <button onclick="audio.toggleGlobalRecording()" class="flex items-center gap-2 px-3 py-1.5 ${audio.isGlobalRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300'} rounded-full text-sm font-bold uppercase tracking-widest hover:opacity-90 transition-all">
+                            ${Icon('record', 'text-lg')}
+                            <span class="hidden lg:inline">${audio.isGlobalRecording ? 'Recording...' : 'Global Rec'}</span>
+                        </button>
                         <button onclick="toggleMode()" class="hidden md:flex items-center gap-2 px-3 py-1.5 ${appState.mode === 'musician' ? 'bg-orange-600 text-white' : 'bg-cyan-600 text-white'} rounded-full text-sm font-bold uppercase tracking-widest hover:opacity-90 transition-all shadow-lg">
                             ${appState.mode === 'musician' ? Icon('guitar', 'text-lg') : Icon('faders', 'text-lg')}
                             <span>${appState.mode === 'musician' ? 'Musician Mode' : 'Producer Mode'}</span>
@@ -4055,7 +4333,14 @@
                        <div class="text-center mb-10">
                            <h2 class="text-orange-500 text-xs font-bold uppercase tracking-[0.2em] mb-2">The Jam Station</h2>
                            <h1 class="text-4xl md:text-5xl font-serif font-black mb-4">Backing Tracks</h1>
-                           <p class="text-stone-400 max-w-lg mx-auto">Select a style. Play the changes. Each track features a generated chord progression to help you practice soloing and rhythm.</p>
+                           <p class="text-stone-400 max-w-lg mx-auto mb-8">Select a style. Play the changes. Each track features a generated chord progression to help you practice soloing and rhythm.</p>
+                           
+                           <div class="flex justify-center">
+                                <button onclick="studio.generateAndPlaySpark()" class="group flex items-center gap-3 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white px-8 py-3 rounded-full font-black uppercase tracking-widest shadow-xl transition-all active:scale-95">
+                                    <span class="text-lg">${Icon('lightning-fill', 'group-hover:animate-pulse')}</span>
+                                    <span>Creative Spark Mode</span>
+                                </button>
+                           </div>
                        </div>
 
                        <!-- Main Grid: Mixer + Scale Panel -->
@@ -4067,7 +4352,23 @@
                                <!-- Controls Area (only show when track is active) -->
                                ${active ? `
                                    <div class="bg-stone-800 border border-stone-700 rounded-xl p-6">
-                                       <div class="flex flex-wrap items-end justify-between gap-6 mb-6 border-b border-stone-700 pb-6">
+                                       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 border-b border-stone-700 pb-6">
+                                            <div>
+                                                <h3 class="text-xs font-bold uppercase text-orange-500 tracking-widest mb-1">Playing ${active.isSpark ? 'Creative Spark' : 'Backing Track'}</h3>
+                                                <h2 class="text-2xl font-black font-serif text-white">${active.title}</h2>
+                                                ${active.isSpark ? `<p class="text-xs text-stone-400 mt-1 font-mono">${active.sparkData.progression.pattern}</p>` : ''}
+                                            </div>
+                                            <div class="flex gap-2">
+                                                ${active.isSpark ? `
+                                                    <button onclick="studio.saveCurrentSpark()" class="flex items-center gap-2 px-4 py-2 bg-stone-900 border border-stone-700 hover:border-orange-500/50 text-stone-300 rounded-lg text-xs font-bold uppercase transition-all">
+                                                        ${Icon('star', 'text-orange-500')} Save to Shed
+                                                    </button>
+                                                ` : ''}
+                                                <button onclick="audio.stopBackingTrack()" class="px-4 py-2 bg-stone-700 hover:bg-stone-600 rounded-lg font-bold text-xs transition-colors uppercase tracking-widest border border-stone-600">Stop</button>
+                                            </div>
+                                       </div>
+
+                                       <div class="flex flex-wrap items-end justify-between gap-6 mb-6">
                                            <div class="flex items-center gap-6">
                                                <div class="flex flex-col">
                                                    <label class="text-[10px] font-bold uppercase text-stone-500 mb-1">Tempo</label>
@@ -4089,7 +4390,6 @@
                                                    </select>
                                                </div>
                                            </div>
-                                           <button onclick="audio.stopBackingTrack()" class="px-6 py-2 bg-stone-700 hover:bg-stone-600 rounded-lg font-bold text-sm transition-colors uppercase tracking-widest border border-stone-600 hover:border-stone-500">Stop Playback</button>
                                        </div>
         
                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -4201,6 +4501,20 @@
 
                        <!-- Track Selection Cards (existing code continues...) -->
                        <div class="grid md:grid-cols-2 gap-6">
+                            <!-- Special Spark Card -->
+                            <button onclick="studio.generateAndPlaySpark()" 
+                                class="text-left p-6 rounded-xl border-2 border-dashed border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10 transition-all group relative overflow-hidden">
+                                <div class="absolute -top-4 -right-4 text-orange-500/10 group-hover:scale-110 transition-transform">${Icon('lightning', 'text-9xl')}</div>
+                                <div class="relative z-10">
+                                    <div class="flex justify-between items-start mb-2">
+                                        <span class="text-xs font-bold uppercase tracking-wider text-orange-500">New Idea</span>
+                                        ${Icon('sparkle', 'text-orange-500 animate-spin-slow')}
+                                    </div>
+                                    <h3 class="text-xl font-bold font-serif mb-1 text-white">Generate Spark</h3>
+                                    <p class="text-sm text-stone-400">Feeling stuck? Let the Shed generate a random progression and a mood for you to jam with.</p>
+                                </div>
+                            </button>
+
                            ${BACKING_TRACKS.map(track => {
                                 const isActive = active && active.id === track.id;
                                 return `
@@ -4216,9 +4530,38 @@
                                     </button>
                                 `;
                             }).join('')}
+                       </div>
+
+                       ${appState.savedSparks.length > 0 ? `
+                           <div class="mt-12">
+                                <h3 class="text-xs font-bold uppercase tracking-[0.2em] text-stone-500 mb-6 flex items-center gap-2">
+                                    ${Icon('star-fill', 'text-orange-500')} Saved Ideas
+                                </h3>
+                                <div class="grid md:grid-cols-3 gap-4">
+                                    ${appState.savedSparks.map(spark => `
+                                        <div class="bg-stone-800/50 border border-stone-700 rounded-xl p-4 flex flex-col justify-between group">
+                                            <div class="mb-4">
+                                                <div class="flex justify-between items-start">
+                                                    <h4 class="font-bold text-white leading-tight">${spark.title}</h4>
+                                                    <button onclick="studio.deleteSpark('${spark.id}')" class="text-stone-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                                                        ${Icon('trash', 'text-sm')}
+                                                    </button>
+                                                </div>
+                                                <p class="text-[10px] text-stone-500 uppercase mt-1">${spark.sparkData.progression.pattern}</p>
+                                            </div>
+                                            <button onclick="audio.playBackingTrack(appState.savedSparks.find(s => s.id === '${spark.id}'))" class="w-full py-2 bg-stone-700 hover:bg-orange-600 text-white rounded text-[10px] font-bold uppercase tracking-widest transition-colors">
+                                                Load Idea
+                                            </button>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                           </div>
+                       ` : ''}
+
+                       <div class="mt-12 flex justify-center">
                              <button onclick="audio.stopBackingTrack()" 
-                                class="col-span-full mt-4 p-4 rounded-xl border-2 border-stone-700 text-stone-400 hover:text-white hover:border-stone-500 font-bold uppercase tracking-widest text-sm transition-colors ${!active ? 'opacity-50 cursor-not-allowed' : ''}" ${!active ? 'disabled' : ''}>
-                                Stop Playback
+                                class="px-8 py-4 rounded-xl border-2 border-stone-700 text-stone-400 hover:text-white hover:border-stone-500 font-bold uppercase tracking-widest text-sm transition-colors ${!active ? 'opacity-50 cursor-not-allowed' : ''}" ${!active ? 'disabled' : ''}>
+                                Stop All Playback
                             </button>
                        </div>
 
@@ -4228,22 +4571,53 @@
         }
 
         // --- PRACTICE TIMER LOGIC ---
+        function startRoutine() {
+            if (appState.savedLessons.length === 0) {
+                alert("Add some lessons to your Shed first!");
+                return;
+            }
+            appState.isRoutineActive = true;
+            appState.routineIndex = 0;
+            setView('practice', appState.savedLessons[0]);
+            startTimer();
+        }
+
+        function nextRoutineStep() {
+            appState.routineIndex++;
+            if (appState.routineIndex < appState.savedLessons.length) {
+                setView('practice', appState.savedLessons[appState.routineIndex]);
+                startTimer();
+            } else {
+                appState.isRoutineActive = false;
+                appState.routineIndex = 0;
+                alert("Routine Complete! Great work.");
+                setView('myshed');
+            }
+        }
+
         function startTimer() {
             if (appState.timerActive) {
                 stopTimer();
                 return;
             }
             appState.timerActive = true;
-            appState.timeLeft = (appState.data.duration || 10) * 60; // Minutes to seconds
+            // Use existing timeLeft if paused, otherwise start fresh
+            if (appState.timeLeft <= 0) {
+                appState.timeLeft = (appState.data.duration || 10) * 60; 
+            }
             
-            // Re-render immediately to show pause button
             render(); 
 
             appState.timer = setInterval(() => {
                 appState.timeLeft--;
                 if (appState.timeLeft <= 0) {
                     stopTimer();
-                    alert("Practice Complete!");
+                    if (appState.isRoutineActive) {
+                        // Play a notification sound? (future improvement)
+                        nextRoutineStep();
+                    } else {
+                        alert("Practice Complete!");
+                    }
                 }
                 updateTimerDisplay();
             }, 1000);
@@ -4345,6 +4719,56 @@
         function setStudioModule(mod) {
             appState.studioModule = mod;
             render();
+        }
+
+        function renderSparkGenerator() {
+            const spark = studio.spark;
+            return `
+                <div class="h-full flex flex-col bg-stone-800 rounded-xl border border-stone-700 p-8 shadow-inner relative overflow-hidden">
+                    <div class="absolute top-4 right-4 opacity-10 text-white">${Icon('lightning', 'text-6xl')}</div>
+                    
+                    <div class="text-center mb-10">
+                        <h2 class="text-xs font-bold uppercase tracking-[0.2em] text-cyan-500 mb-2">The Spark Generator</h2>
+                        <h1 class="text-3xl font-black font-serif text-white">Instant Song Starters</h1>
+                    </div>
+
+                    <div class="grid gap-6 mb-10">
+                        ${spark.progression ? `
+                            <div class="grid md:grid-cols-3 gap-6 animate-fade-in">
+                                <div class="bg-stone-900 rounded-xl p-6 border border-stone-700">
+                                    <span class="text-[10px] font-bold uppercase text-stone-500 mb-2 block">Progression</span>
+                                    <div class="text-2xl font-black text-cyan-400 mb-1">${spark.progression.pattern}</div>
+                                    <p class="text-xs text-stone-500">${spark.progression.name}: ${spark.progression.desc}</p>
+                                </div>
+                                <div class="bg-stone-900 rounded-xl p-6 border border-stone-700">
+                                    <span class="text-[10px] font-bold uppercase text-stone-500 mb-2 block">Vibe / Mood</span>
+                                    <div class="text-2xl font-black text-orange-500">${spark.mood}</div>
+                                </div>
+                                <div class="bg-stone-900 rounded-xl p-6 border border-stone-700">
+                                    <span class="text-[10px] font-bold uppercase text-stone-500 mb-2 block">Creative Constraint</span>
+                                    <p class="text-lg font-bold text-white leading-tight">${spark.constraint}</p>
+                                </div>
+                            </div>
+                        ` : `
+                            <div class="py-20 border-2 border-dashed border-stone-700 rounded-2xl flex flex-col items-center justify-center text-stone-600">
+                                ${Icon('magic-wand', 'text-4xl mb-4')}
+                                <p class="font-bold uppercase tracking-widest text-sm">Nothing generated yet</p>
+                            </div>
+                        `}
+                    </div>
+
+                    <div class="flex flex-col md:flex-row justify-center gap-4">
+                        <button onclick="studio.generateSpark()" class="bg-cyan-600 hover:bg-cyan-500 text-stone-900 px-10 py-4 rounded-full font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center gap-3">
+                            ${Icon('shuffle', 'text-xl')} ${spark.progression ? 'Generate New Spark' : 'Ignite My Inspiration'}
+                        </button>
+                        ${spark.progression ? `
+                            <button onclick="studio.loadSparkToJam()" class="bg-stone-900 hover:bg-stone-800 border border-cyan-500/50 text-cyan-400 px-10 py-4 rounded-full font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center gap-3">
+                                ${Icon('faders', 'text-xl')} Open in Jam Mixer
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
         }
 
         function renderTuner() {
@@ -4658,8 +5082,37 @@
                                       </button>
                                   </div>
                               ` : ''}
+
+                              <div class="h-8 w-px bg-stone-700 mx-2 hidden md:block"></div>
+
+                              <!-- Note Hunt Toggle -->
+                              <button onclick="studio.toggleNoteHunt()" 
+                                  class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${studio.noteHuntActive ? 'bg-orange-600 text-white animate-pulse' : 'bg-stone-800 text-stone-400 hover:bg-stone-700'}">
+                                  ${Icon('target', 'text-lg')}
+                                  <span>${studio.noteHuntActive ? 'HUNT ACTIVE' : 'NOTE HUNT'}</span>
+                              </button>
                          </div>
                     </div>
+
+                    <!-- Note Hunt Game Dashboard -->
+                    ${studio.noteHuntActive ? `
+                        <div class="mb-6 p-4 bg-orange-600/10 border border-orange-500/30 rounded-xl flex items-center justify-between animate-fade-in">
+                            <div class="flex items-center gap-6">
+                                <div>
+                                    <span class="text-[10px] font-bold uppercase text-orange-500 block mb-1">Target Note</span>
+                                    <div class="text-4xl font-black text-white font-mono">${studio.targetNote}</div>
+                                </div>
+                                <div class="h-10 w-px bg-orange-500/30"></div>
+                                <div>
+                                    <span class="text-[10px] font-bold uppercase text-orange-500 block mb-1">Score</span>
+                                    <div class="text-4xl font-black text-orange-500 font-mono">${studio.huntScore}</div>
+                                </div>
+                            </div>
+                            <div class="text-right hidden md:block">
+                                <p class="text-xs text-stone-400 max-w-[200px]">Play the target note anywhere on your instrument to score!</p>
+                            </div>
+                        </div>
+                    ` : ''}
 
                     <!-- Scale Recommendations (Context Aware) -->
                     ${studio.visualizerTrackId ? (() => {
@@ -4798,7 +5251,7 @@
                         <div class="bg-stone-900 rounded-2xl p-4 h-fit border border-stone-800 shadow-lg">
                             <h3 class="text-xs font-bold text-stone-500 uppercase tracking-widest mb-4">Modules</h3>
                             <div class="flex flex-col gap-2">
-                                ${['jamstation', 'tuner', 'looper', 'visualizer'].map(m => `
+                                ${['jamstation', 'tuner', 'looper', 'visualizer', 'spark'].map(m => `
                                     <button onclick="setStudioModule('${m}')" 
                                         class="text-left p-3 rounded-xl font-medium capitalize flex items-center gap-3 transition-all 
                                         ${mod === m ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30' : 'hover:bg-stone-800 text-stone-400'}">
@@ -4806,7 +5259,8 @@
                                         ${m === 'tuner' ? Icon('microphone', 'text-lg') : ''}
                                         ${m === 'looper' ? Icon('repeat', 'text-lg') : ''}
                                         ${m === 'visualizer' ? Icon('sliders', 'text-lg') : ''}
-                                        <span>${m === 'jamstation' ? 'Jam Mixer' : m}</span>
+                                        ${m === 'spark' ? Icon('lightning', 'text-lg') : ''}
+                                        <span>${m === 'jamstation' ? 'Jam Mixer' : (m === 'spark' ? 'Spark' : m)}</span>
                                     </button>
                                 `).join('')}
                             </div>
@@ -4817,11 +5271,13 @@
                                 ${mod === 'looper' ? 'Wear headphones to prevent the mic from recording the speaker output (feedback).' : ''}
                                 ${mod === 'visualizer' ? 'Select a key and scale to visualize safe notes on the fretboard or piano.' : ''}
                                 ${mod === 'jamstation' ? 'This mixer controls the "Jam Station" backing tracks found in the main menu.' : ''}
+                                ${mod === 'spark' ? 'Use the generated constraints to force yourself out of your usual patterns.' : ''}
                             </div>
                         </div>
 
                         <!-- Main Module Area -->
                         <div class="md:col-span-3 min-h-[500px]">
+                            ${mod === 'spark' ? renderSparkGenerator() : ''}
                             ${mod === 'jamstation' ? `
                                 <div class="h-full flex flex-col bg-stone-800 rounded-xl border border-stone-700 p-8 shadow-2xl relative overflow-hidden">
                                     <div class="flex justify-between items-center mb-8">
@@ -5219,17 +5675,26 @@
 
         function renderPractice() {
             const l = appState.data; // Lesson object
+            const nextL = appState.isRoutineActive ? appState.savedLessons[appState.routineIndex + 1] : null;
+
             return `
                 <div class="min-h-screen bg-stone-900 text-white flex flex-col pt-20 pb-32">
                     <div class="max-w-2xl mx-auto w-full px-6 flex-1 flex flex-col">
                         
-                        <div class="mb-8">
-                            <button onclick="setView('home')" class="text-stone-500 hover:text-white flex items-center gap-2 mb-4">
-                                ${Icon('arrow-left')} Exit Focus Mode
-                            </button>
-                            <h2 class="text-orange-500 text-xs font-bold uppercase tracking-[0.2em] mb-2">Current Session</h2>
-                            <h1 class="text-3xl md:text-5xl font-serif font-black mb-4">${l.title}</h1>
-                            <p class="text-stone-400 italic text-xl">"${l.theory}"</p>
+                        <div class="mb-8 flex justify-between items-start">
+                            <div>
+                                <button onclick="setView('home')" class="text-stone-500 hover:text-white flex items-center gap-2 mb-4">
+                                    ${Icon('arrow-left')} Exit Focus Mode
+                                </button>
+                                <h2 class="text-orange-500 text-xs font-bold uppercase tracking-[0.2em] mb-2">${appState.isRoutineActive ? `Routine: Step ${appState.routineIndex + 1} of ${appState.savedLessons.length}` : 'Current Session'}</h2>
+                                <h1 class="text-3xl md:text-5xl font-serif font-black mb-4">${l.title}</h1>
+                                <p class="text-stone-400 italic text-xl">"${l.theory}"</p>
+                            </div>
+                            ${appState.isRoutineActive ? `
+                                <button onclick="nextRoutineStep()" class="bg-stone-800 hover:bg-stone-700 text-stone-300 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider border border-stone-700">
+                                    Skip Step
+                                </button>
+                            ` : ''}
                         </div>
 
                         <div class="flex-1 flex flex-col items-center justify-center mb-8">
@@ -5246,11 +5711,25 @@
                             </button>
                         </div>
 
-                        <div class="bg-stone-800 p-6 rounded-xl border border-stone-700">
-                             <h3 class="text-stone-400 text-xs font-bold uppercase mb-2 flex items-center gap-2">
-                                ${Icon('lightning')} The Assignment
-                             </h3>
-                             <p class="text-xl font-medium leading-relaxed">${l.drill}</p>
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div class="bg-stone-800 p-6 rounded-xl border border-stone-700">
+                                 <h3 class="text-stone-400 text-xs font-bold uppercase mb-2 flex items-center gap-2">
+                                    ${Icon('lightning')} The Assignment
+                                 </h3>
+                                 <p class="text-xl font-medium leading-relaxed">${l.drill}</p>
+                            </div>
+                            
+                            ${nextL ? `
+                                <div class="bg-stone-900/50 p-6 rounded-xl border border-stone-800 border-dashed flex flex-col justify-center">
+                                     <h3 class="text-stone-600 text-xs font-bold uppercase mb-2">Next Up</h3>
+                                     <p class="text-stone-400 font-bold">${nextL.title}</p>
+                                     <p class="text-stone-500 text-sm line-clamp-2 mt-1">${nextL.drill}</p>
+                                </div>
+                            ` : (appState.isRoutineActive ? `
+                                <div class="bg-green-900/20 p-6 rounded-xl border border-green-900/30 border-dashed flex items-center justify-center text-green-500/50 font-bold uppercase text-xs tracking-widest">
+                                    Final Step
+                                </div>
+                            ` : '')}
                         </div>
 
                     </div>
@@ -5261,12 +5740,20 @@
         function renderMyShed() {
             return `
                 <div class="min-h-screen bg-stone-50 dark:bg-stone-950 pt-24 pb-20 px-4">
-                    <div class="max-w-3xl mx-auto">
-                        <h1 class="text-4xl font-serif font-black mb-2 dark:text-white">My Shed</h1>
-                        <p class="text-stone-500 mb-8">Your curated list of essential drills.</p>
-
-                        ${appState.savedLessons.length === 0 ? `
-                            <div class="text-center py-20 border-2 border-dashed border-stone-200 dark:border-stone-800 rounded-lg">
+                                    <div class="max-w-3xl mx-auto">
+                                        <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+                                            <div>
+                                                <h1 class="text-4xl font-serif font-black mb-2 dark:text-white">My Shed</h1>
+                                                <p class="text-stone-500">Your curated list of essential drills.</p>
+                                            </div>
+                                            ${appState.savedLessons.length > 0 ? `
+                                                <button onclick="startRoutine()" class="bg-orange-600 hover:bg-orange-500 text-white px-6 py-3 rounded-full font-bold uppercase tracking-widest shadow-lg transition-all flex items-center gap-2">
+                                                    ${Icon('play-circle', 'text-xl')} Start Routine
+                                                </button>
+                                            ` : ''}
+                                        </div>
+                    
+                                        ${appState.savedLessons.length === 0 ? `                            <div class="text-center py-20 border-2 border-dashed border-stone-200 dark:border-stone-800 rounded-lg">
                                 <p class="text-stone-400">No lessons saved yet. Go explore the volumes and click the star icon.</p>
                                 <button onclick="setView('home')" class="mt-4 text-orange-600 font-bold hover:underline">Explore Volumes</button>
                             </div>
@@ -5291,6 +5778,34 @@
                             </div>
                         `}
                     </div>
+
+                    ${appState.savedSparks.length > 0 ? `
+                        <div class="max-w-3xl mx-auto mt-16 pb-12">
+                            <h2 class="text-2xl font-serif font-black mb-2 dark:text-white">Saved Ideas</h2>
+                            <p class="text-stone-500 mb-8">Song starters from the Spark Generator.</p>
+                            <div class="grid gap-4">
+                                ${appState.savedSparks.map(spark => `
+                                    <div class="bg-white dark:bg-stone-900 p-6 rounded-lg shadow-sm border border-stone-200 dark:border-stone-800 flex flex-col md:flex-row md:items-center justify-between gap-4 group">
+                                        <div>
+                                            <div class="flex items-center gap-2">
+                                                <h3 class="font-bold font-serif text-lg dark:text-white">${spark.title}</h3>
+                                                <span class="text-[10px] bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest">Spark</span>
+                                            </div>
+                                            <p class="text-xs text-stone-500 font-mono mt-1">${spark.sparkData.progression.pattern}</p>
+                                        </div>
+                                        <div class="flex items-center gap-3">
+                                            <button onclick="studio.deleteSpark('${spark.id}')" class="p-2 text-stone-400 hover:text-red-500 rounded transition-colors">
+                                                ${Icon('trash', 'text-lg')}
+                                            </button>
+                                            <button onclick="setView('jam'); audio.playBackingTrack(appState.savedSparks.find(s => s.id === '${spark.id}'))" class="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded font-bold text-xs uppercase tracking-wider transition-all">
+                                                Load to Jam Station
+                                            </button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
                 </div>
             `;
         }
