@@ -111,6 +111,7 @@
                 this.droneNote = 'A2';
                 this.activeTrack = null;
                 this.instrument = 'triangle'; // Default instrument
+                this.engineMode = 'high-fidelity'; // 'standard' or 'high-fidelity'
                 this.workletReady = false;
 
                 // Global Recording State
@@ -140,7 +141,18 @@
                 } catch (e) {
                     console.warn("Worklet failed to load (CORS/file://?), using standard engine.", e);
                     this.workletReady = false;
+                    this.engineMode = 'standard';
                 }
+            }
+
+            getWaveformId(type) {
+                const map = { 'sine': 0, 'sawtooth': 1, 'square': 2, 'triangle': 3 };
+                return map[type] ?? 1;
+            }
+
+            setEngineMode(mode) {
+                this.engineMode = mode;
+                render();
             }
 
             setupAudioGraph() {
@@ -271,13 +283,14 @@
             }
 
             startDrone() {
-                if (this.workletReady) {
+                if (this.workletReady && this.engineMode === 'high-fidelity') {
                     // --- HIGH QUALITY RUST-STYLE ENGINE ---
                     this.droneOsc = new AudioWorkletNode(this.ctx, 'shed-processor', {
                         parameterData: {
                             frequency: this.getFreq(this.droneNote),
                             cutoff: 400,
-                            resonance: 0.6
+                            resonance: 0.6,
+                            waveform: 1 // Always Saw for drone as per original
                         }
                     });
                     this.droneGain = this.ctx.createGain();
@@ -302,7 +315,7 @@
                     this.droneGain.connect(this.ctx.destination); 
                 }
                 
-                this.droneOsc.start();
+                if (this.droneOsc.start) this.droneOsc.start();
                 this.isPlayingDrone = true;
                 renderToolbar();
             }
@@ -494,13 +507,14 @@
                 let source;
                 let filter;
 
-                if (this.workletReady) {
+                if (this.workletReady && this.engineMode === 'high-fidelity') {
                     // --- HIGH QUALITY RUST ENGINE ---
                     source = new AudioWorkletNode(this.ctx, 'shed-processor', {
                         parameterData: {
                             frequency: freq,
                             cutoff: this.brightness,
-                            resonance: 0.2
+                            resonance: 0.2,
+                            waveform: this.getWaveformId(this.instrument)
                         }
                     });
                     // Automate filter sweep on the worklet parameter
@@ -510,7 +524,7 @@
                     
                     source.connect(gain);
                 } else {
-                    // --- FALLBACK ---
+                    // --- FALLBACK / STANDARD ---
                     source = this.ctx.createOscillator();
                     source.type = this.instrument; 
                     source.frequency.value = freq;
@@ -541,8 +555,19 @@
                 panner.connect(this.masterGain); 
                 panner.connect(this.reverbGain); 
 
-                source.start(time);
-                if (source.stop) source.stop(time + duration + release + 0.1);
+                if (source.start) source.start(time);
+                
+                // Cleanup: Oscillators have .stop, Worklets need manual disconnect
+                if (source.stop) {
+                    source.stop(time + duration + release + 0.1);
+                } else {
+                    // Worklet cleanup logic
+                    setTimeout(() => {
+                        source.disconnect();
+                        gain.disconnect();
+                        panner.disconnect();
+                    }, (time + duration + release + 0.5 - this.ctx.currentTime) * 1000);
+                }
             }
         }
 
@@ -874,13 +899,23 @@
                 let subOsc;
                 let filter;
 
-                if (audio.workletReady) {
+                if (audio.workletReady && audio.engineMode === 'high-fidelity') {
                     // --- HIGH QUALITY BASS ENGINE ---
                     osc = new AudioWorkletNode(this.jamCtx, 'shed-processor', {
-                        parameterData: { frequency: freq, cutoff: this.bassFilterCutoff, resonance: this.bassFilterResonance / 20 }
+                        parameterData: { 
+                            frequency: freq, 
+                            cutoff: this.bassFilterCutoff, 
+                            resonance: this.bassFilterResonance / 20,
+                            waveform: audio.getWaveformId(this.bassWaveform)
+                        }
                     });
                     subOsc = new AudioWorkletNode(this.jamCtx, 'shed-processor', {
-                        parameterData: { frequency: freq / 2, cutoff: 2000, resonance: 0 }
+                        parameterData: { 
+                            frequency: freq / 2, 
+                            cutoff: 2000, 
+                            resonance: 0,
+                            waveform: 0 // Sine for sub
+                        }
                     });
                 } else {
                     // Fallback
@@ -916,7 +951,7 @@
                 osc.connect(mainGain);
                 subOsc.connect(subGain);
 
-                if (audio.workletReady) {
+                if (audio.workletReady && audio.engineMode === 'high-fidelity') {
                     mainGain.connect(masterGain);
                     subGain.connect(masterGain);
                 } else {
@@ -928,10 +963,21 @@
                 masterGain.connect(this.jamCtx.destination);
                 if (audio.recordingStreamDest) masterGain.connect(audio.recordingStreamDest);
 
-                osc.start(time);
-                subOsc.start(time);
-                if (osc.stop) osc.stop(time + duration + this.bassRelease + 0.1);
-                if (subOsc.stop) subOsc.stop(time + duration + this.bassRelease + 0.1);
+                if (osc.start) osc.start(time);
+                if (subOsc.start) subOsc.start(time);
+                
+                if (osc.stop) {
+                    osc.stop(time + duration + this.bassRelease + 0.1);
+                    subOsc.stop(time + duration + this.bassRelease + 0.1);
+                } else {
+                    setTimeout(() => {
+                        osc.disconnect();
+                        subOsc.disconnect();
+                        mainGain.disconnect();
+                        subGain.disconnect();
+                        masterGain.disconnect();
+                    }, (time + duration + this.bassRelease + 0.5 - this.jamCtx.currentTime) * 1000);
+                }
             }
 
             makeDistortionCurve(amount) {
@@ -4168,6 +4214,11 @@
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
+                        <div class="hidden xl:flex items-center gap-2 bg-stone-100 dark:bg-stone-800 p-1 rounded-full border border-stone-200 dark:border-stone-700">
+                            <span class="text-[9px] font-bold uppercase text-stone-500 px-2">Engine</span>
+                            <button onclick="audio.setEngineMode('standard')" class="px-2 py-1 rounded-full text-[9px] font-bold uppercase transition-all ${audio.engineMode === 'standard' ? 'bg-stone-900 text-white dark:bg-white dark:text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-700'}">Standard</button>
+                            <button onclick="audio.setEngineMode('high-fidelity')" class="px-2 py-1 rounded-full text-[9px] font-bold uppercase transition-all ${audio.engineMode === 'high-fidelity' ? 'bg-cyan-600 text-white shadow-sm' : 'text-stone-500 hover:text-cyan-600'}" ${!audio.workletReady ? 'disabled title="Worklet not available"' : ''}>High-Fi</button>
+                        </div>
                         <button onclick="audio.toggleGlobalRecording()" class="flex items-center gap-2 px-3 py-1.5 ${audio.isGlobalRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300'} rounded-full text-sm font-bold uppercase tracking-widest hover:opacity-90 transition-all">
                             ${Icon('record', 'text-lg')}
                             <span class="hidden lg:inline">${audio.isGlobalRecording ? 'Recording...' : 'Global Rec'}</span>
