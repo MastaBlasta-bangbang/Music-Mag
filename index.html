@@ -116,29 +116,29 @@
                 this.instrument = 'triangle'; // Default instrument
                 this.workletReady = false;
 
-                // --- CLASSIC PRESETS ---
+                // --- PROFESSIONAL CLASSIC PRESETS ---
                 this.presets = {
                     synth: [
-                        { id: 'juno', name: 'Juno Pad', wave: 1, cutoff: 1200, res: 0.4, detune: 18, noise: 0.08, attack: 0.3, release: 1.2 },
-                        { id: 'dx7', name: 'DX7 Tine', wave: 0, cutoff: 5000, res: 0.1, detune: 4, noise: 0, attack: 0.005, release: 0.6 },
-                        { id: 'moog', name: 'Moog Lead', wave: 1, cutoff: 1800, res: 0.6, detune: 30, noise: 0.12, attack: 0.04, release: 0.4 },
-                        { id: 'poly', name: '80s Poly', wave: 2, cutoff: 2500, res: 0.25, detune: 12, noise: 0.02, attack: 0.02, release: 0.5 },
-                        { id: 'wash', name: 'Ambient Wash', wave: 3, cutoff: 600, res: 0.5, detune: 45, noise: 0.25, attack: 0.8, release: 2.0 },
-                        { id: 'acid', name: 'Acid Squelch', wave: 2, cutoff: 400, res: 0.85, detune: 8, noise: 0.01, attack: 0.01, release: 0.2 },
-                        { id: 'organ', name: 'Organ Grind', wave: 0, cutoff: 4500, res: 0.05, detune: 35, noise: 0.15, attack: 0.01, release: 0.1 },
-                        { id: 'strings', name: 'String Machine', wave: 1, cutoff: 3500, res: 0.15, detune: 55, noise: 0.15, attack: 0.15, release: 0.8 },
-                        { id: 'bell', name: 'Bell Swell', wave: 0, cutoff: 7000, res: 0.3, detune: 3, noise: 0, attack: 0.01, release: 1.5 },
-                        { id: 'pluck', name: 'Plucky Pluck', wave: 1, cutoff: 1200, res: 0.45, detune: 10, noise: 0.05, attack: 0.001, release: 0.2 },
-                        { id: 'lofi', name: 'Lo-Fi Keys', wave: 0, cutoff: 1500, res: 0.35, detune: 15, noise: 0.2, attack: 0.08, release: 0.5 },
-                        { id: 'horn', name: 'Vintage Horn', wave: 1, cutoff: 800, res: 0.25, detune: 22, noise: 0.08, attack: 0.2, release: 0.4 }
+                        { id: 'juno', name: 'Juno Pad', wave: 1, cutoff: 800, res: 0.3, detune: 20, noise: 0.1, sat: 0.2, chorus: 0.6, attack: 0.4, release: 1.5 },
+                        { id: 'dx7', name: 'DX7 Tine', wave: 0, cutoff: 6000, res: 0.1, detune: 2, noise: 0, sat: 0, chorus: 0.2, attack: 0.005, release: 0.8 },
+                        { id: 'moog', name: 'Moog Lead', wave: 1, cutoff: 1500, res: 0.6, detune: 35, noise: 0.15, sat: 0.8, chorus: 0.1, attack: 0.05, release: 0.3 },
+                        { id: 'poly', name: '80s Poly', wave: 2, cutoff: 2200, res: 0.2, detune: 15, noise: 0.02, sat: 0.3, chorus: 0.4, attack: 0.02, release: 0.6 },
+                        { id: 'wash', name: 'Ambient Wash', wave: 3, cutoff: 500, res: 0.4, detune: 50, noise: 0.3, sat: 0.1, chorus: 0.8, attack: 1.2, release: 2.5 },
+                        { id: 'acid', name: 'Acid Squelch', wave: 2, cutoff: 300, res: 0.9, detune: 10, noise: 0.05, sat: 1.2, chorus: 0, attack: 0.01, release: 0.2 },
+                        { id: 'organ', name: 'Organ Grind', wave: 0, cutoff: 4000, res: 0.05, detune: 40, noise: 0.2, sat: 0.6, chorus: 0.3, attack: 0.01, release: 0.1 },
+                        { id: 'strings', name: 'String Machine', wave: 1, cutoff: 3000, res: 0.1, detune: 60, noise: 0.2, sat: 0.4, chorus: 0.7, attack: 0.2, release: 1.0 },
+                        { id: 'bell', name: 'Crystal Bell', wave: 0, cutoff: 8000, res: 0.2, detune: 5, noise: 0, sat: 0, chorus: 0.5, attack: 0.01, release: 2.0 },
+                        { id: 'pluck', name: 'Neon Pluck', wave: 1, cutoff: 1800, res: 0.5, detune: 12, noise: 0.05, sat: 0.2, chorus: 0.3, attack: 0.001, release: 0.3 },
+                        { id: 'lofi', name: 'VHS Keys', wave: 0, cutoff: 1400, res: 0.3, detune: 25, noise: 0.4, sat: 0.5, chorus: 0.5, attack: 0.1, release: 0.5 },
+                        { id: 'horn', name: 'Retro Brass', wave: 1, cutoff: 700, res: 0.2, detune: 28, noise: 0.1, sat: 0.4, chorus: 0.2, attack: 0.15, release: 0.4 }
                     ],
                     bass: [
-                        { id: 'b-moog', name: 'Classic Moog', wave: 1, cutoff: 350, res: 0.5, detune: 20, noise: 0.12 },
-                        { id: 'b-fm', name: 'FM Slap', wave: 0, cutoff: 1800, res: 0.25, detune: 6, noise: 0.02 },
-                        { id: 'b-thump', name: 'Sub Thump', wave: 0, cutoff: 150, res: 0.1, detune: 0, noise: 0 },
-                        { id: 'b-dirt', name: 'Dirt Bass', wave: 2, cutoff: 700, res: 0.4, detune: 25, noise: 0.25 },
-                        { id: 'b-acid', name: 'Acid Bass', wave: 1, cutoff: 500, res: 0.75, detune: 12, noise: 0.08 },
-                        { id: 'b-growl', name: 'Growl', wave: 2, cutoff: 250, res: 0.65, detune: 40, noise: 0.15 }
+                        { id: 'b-moog', name: 'Model D Bass', wave: 1, cutoff: 250, res: 0.5, detune: 25, noise: 0.15, sat: 1.5, chorus: 0.1 },
+                        { id: 'b-fm', name: 'FM Slap', wave: 0, cutoff: 1500, res: 0.3, detune: 8, noise: 0.02, sat: 0.4, chorus: 0.2 },
+                        { id: 'b-thump', name: 'Solid Sub', wave: 0, cutoff: 120, res: 0.1, detune: 0, noise: 0, sat: 0.5, chorus: 0 },
+                        { id: 'b-dirt', name: 'Fuzz Bass', wave: 2, cutoff: 600, res: 0.4, detune: 30, noise: 0.3, sat: 2.5, chorus: 0.2 },
+                        { id: 'b-acid', name: 'TB-303 Bass', wave: 1, cutoff: 450, res: 0.8, detune: 12, noise: 0.05, sat: 1.8, chorus: 0 },
+                        { id: 'b-growl', name: 'Voodoo Growl', wave: 2, cutoff: 200, res: 0.7, detune: 45, noise: 0.2, sat: 2.0, chorus: 0.3 }
                     ]
                 };
 
@@ -560,7 +560,10 @@
                             resonance: p.res,
                             waveform: p.wave,
                             detune: p.detune,
-                            noise: p.noise
+                            noise: p.noise,
+                            mode: 0,
+                            saturation: p.sat,
+                            chorusMix: p.chorus
                         }
                     });
                     
@@ -1017,7 +1020,10 @@
                             resonance: p.res,
                             waveform: p.wave,
                             detune: p.detune,
-                            noise: p.noise
+                            noise: p.noise,
+                            mode: 0,
+                            saturation: p.sat,
+                            chorusMix: p.chorus
                         }
                     });
                     subOsc = new AudioWorkletNode(this.jamCtx, 'shed-processor', {
@@ -4365,40 +4371,56 @@
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
-                        <div class="flex items-center gap-1 bg-stone-100 dark:bg-stone-800 p-1 rounded-full border border-stone-200 dark:border-stone-700 scale-75 md:scale-100">
-                            <button onclick="audio.setEngineMode('standard')" class="px-2 py-1 rounded-full text-[9px] font-bold uppercase transition-all ${appState.audioEngineMode === 'standard' ? 'bg-stone-900 text-white dark:bg-white dark:text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-700'}">Standard</button>
-                            <button onclick="audio.setEngineMode('high-fidelity')" 
-                                class="px-2 py-1 rounded-full text-[9px] font-bold uppercase transition-all 
-                                ${appState.audioEngineMode === 'high-fidelity' ? (audio.workletReady ? 'bg-cyan-600 text-white shadow-sm' : 'bg-red-500 text-white shadow-sm') : 'text-stone-500 hover:text-cyan-600'}"
-                                title="${appState.audioEngineMode === 'high-fidelity' && !audio.workletReady ? 'High-Fi failed to load. Using fallback.' : ''}">
-                                High-Fi
+                        <!-- Desktop-only controls -->
+                        <div class="hidden md:flex items-center gap-2">
+                            <div class="flex items-center gap-1 bg-stone-100 dark:bg-stone-800 p-1 rounded-full border border-stone-200 dark:border-stone-700">
+                                <button onclick="audio.setEngineMode('standard')" class="px-2 py-1 rounded-full text-[9px] font-bold uppercase transition-all ${appState.audioEngineMode === 'standard' ? 'bg-stone-900 text-white dark:bg-white dark:text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-700'}">Standard</button>
+                                <button onclick="audio.setEngineMode('high-fidelity')" 
+                                    class="px-2 py-1 rounded-full text-[9px] font-bold uppercase transition-all 
+                                    ${appState.audioEngineMode === 'high-fidelity' ? (audio.workletReady ? 'bg-cyan-600 text-white shadow-sm' : 'bg-red-500 text-white shadow-sm') : 'text-stone-500 hover:text-cyan-600'}">
+                                    High-Fi
+                                </button>
+                            </div>
+                            <button onclick="audio.toggleGlobalRecording()" class="flex items-center gap-2 px-3 py-1.5 ${audio.isGlobalRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300'} rounded-full text-sm font-bold uppercase tracking-widest hover:opacity-90 transition-all">
+                                ${Icon('record', 'text-lg')}
+                                <span class="hidden lg:inline">${audio.isGlobalRecording ? 'Recording...' : 'Global Rec'}</span>
                             </button>
                         </div>
-                        <button onclick="audio.toggleGlobalRecording()" class="flex items-center gap-2 px-3 py-1.5 ${audio.isGlobalRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300'} rounded-full text-sm font-bold uppercase tracking-widest hover:opacity-90 transition-all">
-                            ${Icon('record', 'text-lg')}
-                            <span class="hidden lg:inline">${audio.isGlobalRecording ? 'Recording...' : 'Global Rec'}</span>
-                        </button>
+
                         <button onclick="toggleMode()" class="hidden md:flex items-center gap-2 px-3 py-1.5 ${appState.mode === 'musician' ? 'bg-orange-600 text-white' : 'bg-cyan-600 text-white'} rounded-full text-sm font-bold uppercase tracking-widest hover:opacity-90 transition-all shadow-lg">
                             ${appState.mode === 'musician' ? Icon('guitar', 'text-lg') : Icon('faders', 'text-lg')}
                             <span>${appState.mode === 'musician' ? 'Musician Mode' : 'Producer Mode'}</span>
                         </button>
-                        <button onclick="setView('studio')" class="hidden md:flex items-center gap-2 px-3 py-1.5 bg-stone-900 dark:bg-white text-white dark:text-stone-900 rounded-full text-sm font-bold uppercase tracking-widest hover:bg-cyan-500 hover:text-stone-900 transition-all shadow-lg">
-                            ${Icon('activity', 'text-lg')}
-                            <span>Studio</span>
-                        </button>
-                         <button onclick="setView('jam')" class="flex items-center gap-2 px-3 py-1.5 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-full text-sm font-medium hover:bg-orange-100 dark:hover:bg-orange-900/30 hover:text-orange-600 transition-all">
-                            ${Icon('music-notes', 'text-lg')}
-                            <span class="hidden md:inline">Jam Station</span>
-                        </button>
-                        <button onclick="setView('myshed')" class="hidden md:flex items-center gap-2 px-3 py-1.5 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-full text-sm font-medium hover:bg-orange-100 dark:hover:bg-orange-900/30 hover:text-orange-600 transition-all">
-                            ${Icon('star', 'text-lg')}
-                            <span>My Shed</span>
-                        </button>
+                        
                         <button onclick="toggleTheme()" class="p-2 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full transition-colors text-stone-600 dark:text-stone-400">
                             ${isDark ? Icon('sun', 'text-xl') : Icon('moon', 'text-xl')}
                         </button>
                     </div>
                 </header>
+
+                <!-- Mobile Bottom Navigation -->
+                <nav class="fixed bottom-0 left-0 right-0 z-[100] md:hidden bg-white/95 dark:bg-stone-900/95 backdrop-blur border-t border-stone-200 dark:border-stone-800 h-16 flex items-center justify-around px-2 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]">
+                    <button onclick="setView('home')" class="flex flex-col items-center gap-1 ${appState.view === 'home' ? 'text-orange-600' : 'text-stone-500'}">
+                        ${Icon('house', 'text-xl')}
+                        <span class="text-[10px] font-bold uppercase">Home</span>
+                    </button>
+                    <button onclick="setView('studio')" class="flex flex-col items-center gap-1 ${appState.view === 'studio' ? 'text-cyan-500' : 'text-stone-500'}">
+                        ${Icon('activity', 'text-xl')}
+                        <span class="text-[10px] font-bold uppercase">Studio</span>
+                    </button>
+                    <button onclick="setView('jam')" class="flex flex-col items-center gap-1 ${appState.view === 'jam' ? 'text-orange-600' : 'text-stone-500'}">
+                        ${Icon('music-notes', 'text-xl')}
+                        <span class="text-[10px] font-bold uppercase">Jam</span>
+                    </button>
+                    <button onclick="setView('myshed')" class="flex flex-col items-center gap-1 ${appState.view === 'myshed' ? 'text-orange-600' : 'text-stone-500'}">
+                        ${Icon('star', 'text-xl')}
+                        <span class="text-[10px] font-bold uppercase">Shed</span>
+                    </button>
+                    <button onclick="toggleMenu()" class="flex flex-col items-center gap-1 text-stone-500">
+                        ${Icon('dots-three-outline', 'text-xl')}
+                        <span class="text-[10px] font-bold uppercase">More</span>
+                    </button>
+                </nav>
             `;
         }
 
@@ -4569,6 +4591,39 @@
                            </div>
                        </div>
 
+                       <!-- Track Selection (Moved up for mobile ease) -->
+                       <div class="mb-12">
+                           <h3 class="text-xs font-bold uppercase tracking-widest text-stone-500 mb-6 flex items-center gap-2">
+                               ${Icon('selection', 'text-orange-500')} Select A Style
+                           </h3>
+                           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <!-- Special Spark Card -->
+                                <button onclick="studio.generateAndPlaySpark()" 
+                                    class="text-left p-4 rounded-xl border-2 border-dashed border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10 transition-all group relative overflow-hidden">
+                                    <div class="flex justify-between items-start mb-1">
+                                        <span class="text-[10px] font-bold uppercase tracking-wider text-orange-500">New Idea</span>
+                                        ${Icon('sparkle', 'text-orange-500 animate-spin-slow')}
+                                    </div>
+                                    <h3 class="text-lg font-bold font-serif text-white">Generate Spark</h3>
+                                </button>
+
+                               ${BACKING_TRACKS.map(track => {
+                                    const isActive = active && active.id === track.id;
+                                    return `
+                                        <button onclick="audio.playBackingTrack(BACKING_TRACKS.find(t => t.id === '${track.id}'))" 
+                                            class="text-left p-4 rounded-xl border transition-all duration-300 group
+                                            ${isActive ? 'bg-orange-600 border-orange-500 shadow-lg scale-[1.02]' : 'bg-stone-800 border-stone-700 hover:border-orange-500/50 hover:bg-stone-800/80'}">
+                                            <div class="flex justify-between items-start mb-1">
+                                                <span class="text-[10px] font-bold uppercase tracking-wider ${isActive ? 'text-white/80' : 'text-stone-400 group-hover:text-orange-500'}">${track.genre}</span>
+                                                ${isActive ? Icon('speaker-high', 'text-white animate-pulse') : ''}
+                                            </div>
+                                            <h3 class="text-lg font-bold font-serif ${isActive ? 'text-white' : 'text-stone-200'}">${track.title}</h3>
+                                        </button>
+                                    `;
+                                }).join('')}
+                           </div>
+                       </div>
+
                        <!-- Main Grid: Mixer + Scale Panel -->
                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         
@@ -4731,45 +4786,12 @@
                            </div>
                        </div>
 
-                       <!-- Track Selection Cards (existing code continues...) -->
-                       <div class="grid md:grid-cols-2 gap-6">
-                            <!-- Special Spark Card -->
-                            <button onclick="studio.generateAndPlaySpark()" 
-                                class="text-left p-6 rounded-xl border-2 border-dashed border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10 transition-all group relative overflow-hidden">
-                                <div class="absolute -top-4 -right-4 text-orange-500/10 group-hover:scale-110 transition-transform">${Icon('lightning', 'text-9xl')}</div>
-                                <div class="relative z-10">
-                                    <div class="flex justify-between items-start mb-2">
-                                        <span class="text-xs font-bold uppercase tracking-wider text-orange-500">New Idea</span>
-                                        ${Icon('sparkle', 'text-orange-500 animate-spin-slow')}
-                                    </div>
-                                    <h3 class="text-xl font-bold font-serif mb-1 text-white">Generate Spark</h3>
-                                    <p class="text-sm text-stone-400">Feeling stuck? Let the Shed generate a random progression and a mood for you to jam with.</p>
-                                </div>
-                            </button>
-
-                           ${BACKING_TRACKS.map(track => {
-                                const isActive = active && active.id === track.id;
-                                return `
-                                    <button onclick="audio.playBackingTrack(BACKING_TRACKS.find(t => t.id === '${track.id}'))" 
-                                        class="text-left p-6 rounded-xl border transition-all duration-300 group
-                                        ${isActive ? 'bg-orange-600 border-orange-500 shadow-lg scale-[1.02]' : 'bg-stone-800 border-stone-700 hover:border-orange-500/50 hover:bg-stone-800/80'}">
-                                        <div class="flex justify-between items-start mb-2">
-                                            <span class="text-xs font-bold uppercase tracking-wider ${isActive ? 'text-white/80' : 'text-stone-400 group-hover:text-orange-500'}">${track.genre}</span>
-                                            ${isActive ? Icon('speaker-high', 'text-white animate-pulse') : ''}
-                                        </div>
-                                        <h3 class="text-xl font-bold font-serif mb-1 ${isActive ? 'text-white' : 'text-stone-200'}">${track.title}</h3>
-                                        <p class="text-sm ${isActive ? 'text-white/90' : 'text-stone-400'} line-clamp-2">${track.description}</p>
-                                    </button>
-                                `;
-                            }).join('')}
-                       </div>
-
                        ${appState.savedSparks.length > 0 ? `
                            <div class="mt-12">
                                 <h3 class="text-xs font-bold uppercase tracking-[0.2em] text-stone-500 mb-6 flex items-center gap-2">
                                     ${Icon('star-fill', 'text-orange-500')} Saved Ideas
                                 </h3>
-                                <div class="grid md:grid-cols-3 gap-4">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                     ${appState.savedSparks.map(spark => `
                                         <div class="bg-stone-800/50 border border-stone-700 rounded-xl p-4 flex flex-col justify-between group">
                                             <div class="mb-4">
@@ -4779,7 +4801,7 @@
                                                         ${Icon('trash', 'text-sm')}
                                                     </button>
                                                 </div>
-                                                <p class="text-[10px] text-stone-500 uppercase mt-1">${spark.sparkData.progression.pattern}</p>
+                                                <p class="text-[10px] text-stone-500 uppercase mt-1 font-mono">${spark.sparkData.progression.pattern}</p>
                                             </div>
                                             <button onclick="audio.playBackingTrack(appState.savedSparks.find(s => s.id === '${spark.id}'))" class="w-full py-2 bg-stone-700 hover:bg-orange-600 text-white rounded text-[10px] font-bold uppercase tracking-widest transition-colors">
                                                 Load Idea
@@ -4790,17 +4812,39 @@
                            </div>
                        ` : ''}
 
-                       <div class="mt-12 flex justify-center">
-                             <button onclick="audio.stopBackingTrack()" 
-                                class="px-8 py-4 rounded-xl border-2 border-stone-700 text-stone-400 hover:text-white hover:border-stone-500 font-bold uppercase tracking-widest text-sm transition-colors ${!active ? 'opacity-50 cursor-not-allowed' : ''}" ${!active ? 'disabled' : ''}>
-                                Stop All Playback
-                            </button>
-                       </div>
-
                    </div>
                </div>
             `;
         }
+
+        // --- PWA FOUNDATION ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                // Register a simple service worker for offline support
+                const blob = new Blob([`
+                    self.addEventListener('fetch', (event) => {
+                        event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+                    });
+                `], { type: 'application/javascript' });
+                const workerUrl = URL.createObjectURL(blob);
+                navigator.serviceWorker.register(workerUrl).then(reg => console.log('PWA Active')).catch(err => console.log('PWA Error', err));
+            });
+        }
+
+        // Add Manifest dynamically
+        const manifest = {
+            name: "THE SHED",
+            short_name: "The Shed",
+            start_url: ".",
+            display: "standalone",
+            background_color: "#1a1a1a",
+            theme_color: "#ea580c"
+        };
+        const manifestStr = encodeURIComponent(JSON.stringify(manifest));
+        const link = document.createElement('link');
+        link.rel = 'manifest';
+        link.href = 'data:application/json,' + manifestStr;
+        document.head.appendChild(link);
 
         // --- PRACTICE TIMER LOGIC ---
         function startRoutine() {
@@ -4951,6 +4995,13 @@
         function setStudioModule(mod) {
             appState.studioModule = mod;
             render();
+            // Auto-scroll to module on mobile
+            if (window.innerWidth < 768) {
+                setTimeout(() => {
+                    const el = document.getElementById('studio-main-area');
+                    if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }, 100);
+            }
         }
 
         function renderSparkGenerator() {
@@ -5508,7 +5559,7 @@
                         </div>
 
                         <!-- Main Module Area -->
-                        <div class="md:col-span-3 min-h-[500px]">
+                        <div id="studio-main-area" class="md:col-span-3 min-h-[500px]">
                             ${mod === 'spark' ? renderSparkGenerator() : ''}
                             ${mod === 'jamstation' ? `
                                 <div class="h-full flex flex-col bg-stone-800 rounded-xl border border-stone-700 p-8 shadow-2xl relative overflow-hidden">
