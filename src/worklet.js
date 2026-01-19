@@ -7,13 +7,12 @@ class ShedProcessor extends AudioWorkletProcessor {
         this.sampleRate = 44100;
         this.noiseState = 12345;
         
-        // Chorus/Delay state
+        // Chorus state
         this.chorusBufferL = new Float32Array(4410); 
         this.chorusBufferR = new Float32Array(4410);
         this.chorusWritePtr = 0;
         this.lfoPhase = 0;
         
-        // Drift state
         this.driftPhase = Math.random();
 
         this.port.onmessage = (e) => {
@@ -39,33 +38,34 @@ class ShedProcessor extends AudioWorkletProcessor {
 
     process(inputs, outputs, parameters) {
         const output = outputs[0];
+        if (!output || !output[0]) return true;
         const numFrames = output[0].length;
 
-        const freqs = parameters.frequency;
-        const cutoffs = parameters.cutoff;
-        const resonances = parameters.resonance;
-        const waveforms = parameters.waveform;
-        const detunes = parameters.detune;
-        const noiseMix = parameters.noise;
-        const mode = parameters.mode; 
+        // Helper to get parameter value safely
+        const getParam = (name, index, defaultValue) => {
+            const arr = parameters[name];
+            if (!arr || arr.length === 0) return defaultValue;
+            return arr.length > 1 ? arr[index] : arr[0];
+        };
 
         for (let i = 0; i < numFrames; ++i) {
-            const m = mode.length > 1 ? mode[i] : mode[0];
-            const baseFreq = freqs.length > 1 ? freqs[i] : freqs[0];
-            const cutoff = cutoffs.length > 1 ? cutoffs[i] : cutoffs[0];
-            const resonance = resonances.length > 1 ? resonances[i] : resonances[0];
-            const waveType = waveforms.length > 1 ? waveforms[i] : waveforms[0];
+            const m = getParam("mode", i, 0);
+            const baseFreq = getParam("frequency", i, 440);
+            const cutoff = getParam("cutoff", i, 1000);
+            const resonance = getParam("resonance", i, 0.5);
+            const waveType = getParam("waveform", i, 1);
+            const satAmt = getParam("saturation", i, 0.5);
+            const cMix = getParam("chorusMix", i, 0.3);
             
-            // --- ANALOG DRIFT ---
             this.driftPhase = (this.driftPhase + 0.2 / this.sampleRate) % 1.0;
-            const drift = Math.sin(this.driftPhase * 2 * Math.PI) * 0.5; // Tiny pitch drift
+            const drift = Math.sin(this.driftPhase * 2 * Math.PI) * 0.5;
             const freq = baseFreq * Math.pow(2, drift / 1200);
 
             let val = 0;
             const dt1 = freq / this.sampleRate;
 
             if (m < 0.5) { // SYNTH MODE
-                const detuneAmt = detunes.length > 1 ? detunes[i] : detunes[0];
+                const detuneAmt = getParam("detune", i, 10);
                 const dt2 = (freq * Math.pow(2, detuneAmt / 1200)) / this.sampleRate;
                 
                 const generateWave = (phase, dt, type) => {
@@ -85,31 +85,29 @@ class ShedProcessor extends AudioWorkletProcessor {
                 
                 let osc1 = generateWave(this.phase1, dt1, waveType);
                 let osc2 = generateWave(this.phase2, dt2, waveType);
-                val = (osc1 * 0.5 + osc2 * 0.4) + (this.getNoise() * (noiseMix.length > 1 ? noiseMix[i] : noiseMix[0]));
+                const nMix = getParam("noise", i, 0);
+                val = (osc1 * 0.5 + osc2 * 0.4) + (this.getNoise() * nMix);
                 
                 this.phase1 = (this.phase1 + dt1) % 1.0;
                 this.phase2 = (this.phase2 + dt2) % 1.0;
             } 
-            else if (m < 1.5) { // KICK MODE
+            else if (m < 1.5) { // KICK
                 val = Math.sin(this.phase1 * 2 * Math.PI);
                 this.phase1 = (this.phase1 + dt1) % 1.0;
             } 
-            else if (m < 2.5) { // SNARE MODE
+            else if (m < 2.5) { // SNARE
                 val = (Math.sin(this.phase1 * 2 * Math.PI) * 0.2) + (this.getNoise() * 0.8);
                 this.phase1 = (this.phase1 + dt1) % 1.0;
             } 
-            else { // HI-HAT MODE
+            else { // HI-HAT
                 val = this.getNoise();
             }
 
-            // --- LADDER FILTER (Moog Style with Saturation) ---
+            // --- LADDER FILTER ---
             const g = Math.tan(cutoff * Math.PI / this.sampleRate);
             const k = resonance * 4.0;
-            
-            // Nonlinear feedback
             const sat = (x) => Math.tanh(x);
             const d1_in = (val - sat(this.d4 * k)) / (1.0 + g);
-            
             this.d1 = this.d1 + g * (sat(d1_in) - sat(this.d1));
             this.d2 = this.d2 + g * (sat(this.d1) - sat(this.d2));
             this.d3 = this.d3 + g * (sat(this.d2) - sat(this.d3));
@@ -117,24 +115,21 @@ class ShedProcessor extends AudioWorkletProcessor {
 
             let out = this.d4;
 
-            // --- SOFT CLIPPING ---
-            out = Math.tanh(out * 1.5);
+            // --- DYNAMIC SATURATION ---
+            out = Math.tanh(out * (1.0 + satAmt));
 
-            // --- STEREO WIDENING (Classic Chorus) ---
+            // --- CHORUS ---
             this.lfoPhase = (this.lfoPhase + 0.6 / this.sampleRate) % 1.0;
             const lfo = Math.sin(this.lfoPhase * 2 * Math.PI);
-            
             this.chorusBufferL[this.chorusWritePtr] = out;
             this.chorusBufferR[this.chorusWritePtr] = out;
-            
             const delaySamples = 441 + lfo * 110; 
             const readPtr = (this.chorusWritePtr - Math.floor(delaySamples) + 4410) % 4410;
-            
             const wetL = this.chorusBufferL[readPtr];
             const wetR = this.chorusBufferR[(readPtr + 80) % 4410]; 
 
-            output[0][i] = out + wetL * 0.3;
-            output[1][i] = out + wetR * 0.3;
+            output[0][i] = out + wetL * cMix;
+            if (output[1]) output[1][i] = out + wetR * cMix;
 
             this.chorusWritePtr = (this.chorusWritePtr + 1) % 4410;
         }
@@ -149,7 +144,9 @@ class ShedProcessor extends AudioWorkletProcessor {
             { name: "waveform", defaultValue: 1 },
             { name: "detune", defaultValue: 10 },
             { name: "noise", defaultValue: 0 },
-            { name: "mode", defaultValue: 0 } 
+            { name: "mode", defaultValue: 0 },
+            { name: "saturation", defaultValue: 0.5 },
+            { name: "chorusMix", defaultValue: 0.3 }
         ];
     }
 }
