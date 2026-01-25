@@ -88,6 +88,10 @@
                 this.reverbNode = null;
                 this.reverbGain = null;
                 this.impulseBuffer = null;
+                
+                // FX Rack
+                this.fxNode = null;
+                this.fxParams = { drive: 0, delayTime: 0.3, delayFeedback: 0.4, delayMix: 0, reverbMix: 0 };
 
                 // Parameters
                 this.reverbAmount = 0.4;
@@ -116,29 +120,68 @@
                 this.instrument = 'triangle'; // Default instrument
                 this.workletReady = false;
 
-                // --- PROFESSIONAL CLASSIC PRESETS ---
+                // --- CLASSIC ANALOG SYNTH PRESETS ---
+                // wave: 0=sine, 1=saw, 2=square, 3=triangle
+                // cutoff: filter frequency (Hz), res: resonance (0-0.95)
+                // detune: cents between oscillators, noise: noise mix (0-1)
+                // sat: saturation/drive, chorus: chorus wet mix
+                // ADSR: attack, decay, sustain (0-1), release (seconds)
                 this.presets = {
                     synth: [
-                        { id: 'juno', name: 'Juno Pad', wave: 1, cutoff: 800, res: 0.3, detune: 20, noise: 0.1, sat: 0.2, chorus: 0.6, attack: 0.4, release: 1.5 },
-                        { id: 'dx7', name: 'DX7 Tine', wave: 0, cutoff: 6000, res: 0.1, detune: 2, noise: 0, sat: 0, chorus: 0.2, attack: 0.005, release: 0.8 },
-                        { id: 'moog', name: 'Moog Lead', wave: 1, cutoff: 1500, res: 0.6, detune: 35, noise: 0.15, sat: 0.8, chorus: 0.1, attack: 0.05, release: 0.3 },
-                        { id: 'poly', name: '80s Poly', wave: 2, cutoff: 2200, res: 0.2, detune: 15, noise: 0.02, sat: 0.3, chorus: 0.4, attack: 0.02, release: 0.6 },
-                        { id: 'wash', name: 'Ambient Wash', wave: 3, cutoff: 500, res: 0.4, detune: 50, noise: 0.3, sat: 0.1, chorus: 0.8, attack: 1.2, release: 2.5 },
-                        { id: 'acid', name: 'Acid Squelch', wave: 2, cutoff: 300, res: 0.9, detune: 10, noise: 0.05, sat: 1.2, chorus: 0, attack: 0.01, release: 0.2 },
-                        { id: 'organ', name: 'Organ Grind', wave: 0, cutoff: 4000, res: 0.05, detune: 40, noise: 0.2, sat: 0.6, chorus: 0.3, attack: 0.01, release: 0.1 },
-                        { id: 'strings', name: 'String Machine', wave: 1, cutoff: 3000, res: 0.1, detune: 60, noise: 0.2, sat: 0.4, chorus: 0.7, attack: 0.2, release: 1.0 },
-                        { id: 'bell', name: 'Crystal Bell', wave: 0, cutoff: 8000, res: 0.2, detune: 5, noise: 0, sat: 0, chorus: 0.5, attack: 0.01, release: 2.0 },
-                        { id: 'pluck', name: 'Neon Pluck', wave: 1, cutoff: 1800, res: 0.5, detune: 12, noise: 0.05, sat: 0.2, chorus: 0.3, attack: 0.001, release: 0.3 },
-                        { id: 'lofi', name: 'VHS Keys', wave: 0, cutoff: 1400, res: 0.3, detune: 25, noise: 0.4, sat: 0.5, chorus: 0.5, attack: 0.1, release: 0.5 },
-                        { id: 'horn', name: 'Retro Brass', wave: 1, cutoff: 700, res: 0.2, detune: 28, noise: 0.1, sat: 0.4, chorus: 0.2, attack: 0.15, release: 0.4 }
+                        // Roland Juno-60/106: Lush pads, famous BBD chorus, warm saw
+                        { id: 'juno', name: 'Juno-106 Pad', wave: 1, cutoff: 800, res: 0.15, detune: 8, noise: 0, sat: 0.2, chorus: 0.7, attack: 0.05, decay: 0.1, sustain: 0.9, release: 0.3 },
+
+                        // Yamaha DX7: FM synthesis, bell-like electric piano tines
+                        { id: 'dx7', name: 'DX7 E.Piano', wave: 0, cutoff: 4000, res: 0.05, detune: 1, noise: 0, sat: 0, chorus: 0.1, attack: 0.001, decay: 0.8, sustain: 0.2, release: 0.2 },
+
+                        // Minimoog Model D: Fat lead, ladder filter, 3 osc thickness
+                        { id: 'moog', name: 'Minimoog Lead', wave: 1, cutoff: 2200, res: 0.45, detune: 7, noise: 0, sat: 0.5, chorus: 0, attack: 0.01, decay: 0.15, sustain: 0.8, release: 0.1 },
+
+                        // Sequential Prophet-5: Classic polysynth, punchy brass/pads
+                        { id: 'prophet', name: 'Prophet-5 Brass', wave: 2, cutoff: 1800, res: 0.3, detune: 15, noise: 0, sat: 0.3, chorus: 0.25, attack: 0.05, decay: 0.2, sustain: 0.7, release: 0.25 },
+
+                        // Roland TB-303: Acid bassline as lead, squelchy resonance
+                        { id: 'acid', name: '303 Acid', wave: 1, cutoff: 350, res: 0.85, detune: 0, noise: 0, sat: 0.8, chorus: 0, attack: 0.003, decay: 0.15, sustain: 0.0, release: 0.1 },
+
+                        // Oberheim OB-X/OB-Xa: Warm analog poly, lush detuning
+                        { id: 'oberheim', name: 'OB-X Pad', wave: 1, cutoff: 1400, res: 0.2, detune: 12, noise: 0, sat: 0.25, chorus: 0.4, attack: 0.3, decay: 0.25, sustain: 0.8, release: 0.6 },
+
+                        // Solina/ARP String Ensemble: Classic string machine
+                        { id: 'strings', name: 'Solina Strings', wave: 1, cutoff: 2800, res: 0.08, detune: 25, noise: 0.02, sat: 0.15, chorus: 0.8, attack: 0.35, decay: 0.2, sustain: 0.9, release: 0.5 },
+
+                        // Hammond B3 style: Tonewheel organ with chorus/vibrato
+                        { id: 'organ', name: 'Hammond Organ', wave: 0, cutoff: 6000, res: 0, detune: 0, noise: 0, sat: 0.4, chorus: 0.3, attack: 0.005, decay: 0.01, sustain: 1.0, release: 0.05 },
+
+                        // FM Bell: Pure crystalline bell tones
+                        { id: 'bell', name: 'FM Bell', wave: 0, cutoff: 8000, res: 0.1, detune: 2, noise: 0, sat: 0, chorus: 0.2, attack: 0.001, decay: 1.2, sustain: 0.0, release: 1.5 },
+
+                        // PPG Wave: Digital wavetable pluck
+                        { id: 'pluck', name: 'PPG Pluck', wave: 1, cutoff: 3500, res: 0.5, detune: 5, noise: 0, sat: 0.15, chorus: 0.15, attack: 0.001, decay: 0.25, sustain: 0.15, release: 0.2 },
+
+                        // Wurlitzer/Rhodes with tape degradation
+                        { id: 'lofi', name: 'Lo-Fi Keys', wave: 0, cutoff: 1200, res: 0.12, detune: 15, noise: 0.15, sat: 0.35, chorus: 0.45, attack: 0.01, decay: 0.4, sustain: 0.5, release: 0.3 },
+
+                        // Roland Jupiter-8: Huge unison lead
+                        { id: 'jupiter', name: 'Jupiter Lead', wave: 1, cutoff: 3000, res: 0.35, detune: 10, noise: 0, sat: 0.4, chorus: 0.2, attack: 0.02, decay: 0.1, sustain: 0.85, release: 0.25 }
                     ],
                     bass: [
-                        { id: 'b-moog', name: 'Model D Bass', wave: 1, cutoff: 250, res: 0.5, detune: 25, noise: 0.15, sat: 1.5, chorus: 0.1 },
-                        { id: 'b-fm', name: 'FM Slap', wave: 0, cutoff: 1500, res: 0.3, detune: 8, noise: 0.02, sat: 0.4, chorus: 0.2 },
-                        { id: 'b-thump', name: 'Solid Sub', wave: 0, cutoff: 120, res: 0.1, detune: 0, noise: 0, sat: 0.5, chorus: 0 },
-                        { id: 'b-dirt', name: 'Fuzz Bass', wave: 2, cutoff: 600, res: 0.4, detune: 30, noise: 0.3, sat: 2.5, chorus: 0.2 },
-                        { id: 'b-acid', name: 'TB-303 Bass', wave: 1, cutoff: 450, res: 0.8, detune: 12, noise: 0.05, sat: 1.8, chorus: 0 },
-                        { id: 'b-growl', name: 'Voodoo Growl', wave: 2, cutoff: 200, res: 0.7, detune: 45, noise: 0.2, sat: 2.0, chorus: 0.3 }
+                        // Minimoog Model D: The definitive synth bass
+                        { id: 'b-moog', name: 'Minimoog Bass', wave: 1, cutoff: 400, res: 0.4, detune: 5, noise: 0, sat: 0.6, chorus: 0, attack: 0.005, decay: 0.2, sustain: 0.6, release: 0.15 },
+
+                        // Yamaha DX7: Punchy FM slap bass
+                        { id: 'b-fm', name: 'DX7 Slap Bass', wave: 0, cutoff: 2500, res: 0.15, detune: 0, noise: 0, sat: 0.2, chorus: 0, attack: 0.001, decay: 0.3, sustain: 0.3, release: 0.1 },
+
+                        // 808/Sub bass: Pure sine sub-bass
+                        { id: 'b-sub', name: '808 Sub', wave: 0, cutoff: 200, res: 0, detune: 0, noise: 0, sat: 0.3, chorus: 0, attack: 0.01, decay: 0.5, sustain: 0.7, release: 0.3 },
+
+                        // TB-303: Acid bass with signature squelch
+                        { id: 'b-303', name: 'TB-303 Acid', wave: 1, cutoff: 300, res: 0.8, detune: 0, noise: 0, sat: 0.7, chorus: 0, attack: 0.003, decay: 0.12, sustain: 0.0, release: 0.08 },
+
+                        // Reese bass: Detuned saw for DnB/dubstep
+                        { id: 'b-reese', name: 'Reese Bass', wave: 1, cutoff: 600, res: 0.25, detune: 35, noise: 0, sat: 0.5, chorus: 0.1, attack: 0.02, decay: 0.15, sustain: 0.8, release: 0.2 },
+
+                        // Moog Taurus: Huge pedal bass synth
+                        { id: 'b-taurus', name: 'Taurus Pedal', wave: 1, cutoff: 250, res: 0.3, detune: 8, noise: 0, sat: 0.8, chorus: 0, attack: 0.01, decay: 0.3, sustain: 0.75, release: 0.25 }
                     ]
                 };
 
@@ -150,6 +193,9 @@
                 this.globalChunks = [];
                 this.isGlobalRecording = false;
                 this.recordingStreamDest = null;
+                
+                // MIDI State
+                this.activeVoices = {}; // Map note number -> voice object
             }
 
             async init() {
@@ -158,7 +204,6 @@
                     this.setupAudioGraph();
                 }
                 
-                // Always try to setup worklet if it hasn't succeeded yet
                 if (!this.workletReady) {
                     await this.setupWorklet();
                 }
@@ -170,19 +215,33 @@
 
             async setupWorklet() {
                 try {
-                    // Try to load the worklet. If running on file:// this may fail.
-                    // We add a cache-buster to ensure it tries to load again if it failed before
-                    await this.ctx.audioWorklet.addModule('src/worklet.js?v=' + Date.now());
+                    const workletUrl = 'src/worklet.js?v=' + Date.now();
+                    console.log("Loading SHED worklet from:", workletUrl);
+                    await this.ctx.audioWorklet.addModule(workletUrl);
+                    
+                    // Init FX Node
+                    try {
+                        this.fxNode = new AudioWorkletNode(this.ctx, 'shed-fx');
+                        // Connect FX Node: Master -> FX -> Compressor
+                        // We need to re-route: masterGain -> FX -> Compressor
+                        // The original setup was masterGain -> Compressor
+                        this.masterGain.disconnect();
+                        this.masterGain.connect(this.fxNode);
+                        this.fxNode.connect(this.compressor);
+                        console.log("FX Rack Initialized");
+                    } catch (e) { console.warn("FX Rack failed init", e); }
+
                     this.workletReady = true;
-                    console.log("SHED High-Quality Audio Engine Loaded.");
+                    console.log("%c SHED Hi-Fi Audio Engine Loaded Successfully! ", "background: #06b6d4; color: white; font-weight: bold;");
                 } catch (e) {
-                    console.warn("Worklet failed to load (CORS/file://?), using standard engine.", e);
+                    console.warn("Worklet failed, using Standard engine", e);
                     this.workletReady = false;
-                    // Only force standard if we aren't explicitly trying to set it to hifi
-                    if (appState.audioEngineMode === 'high-fidelity') {
-                        // Keep it as hifi so the user sees their choice, but we fallback in the DSP
-                    }
                 }
+            }
+
+            // Helper to check if hi-fi mode is actually available
+            isHiFiAvailable() {
+                return this.workletReady && appState.audioEngineMode === 'high-fidelity';
             }
 
             getWaveformId(type) {
@@ -199,36 +258,33 @@
             }
 
             setupAudioGraph() {
-                // Create a destination for the global recorder
                 this.recordingStreamDest = this.ctx.createMediaStreamDestination();
-
-                // Master Bus -> Compressor -> Destination
                 this.masterGain = this.ctx.createGain();
                 this.masterGain.gain.value = 0.6; 
-
                 this.compressor = this.ctx.createDynamicsCompressor();
                 this.compressor.threshold.value = -20;
                 this.compressor.knee.value = 30;
                 this.compressor.ratio.value = 12;
                 this.compressor.attack.value = 0.003;
                 this.compressor.release.value = 0.25;
-
-                // Reverb Chain
                 this.reverbGain = this.ctx.createGain();
                 this.reverbGain.gain.value = this.reverbAmount; 
                 this.reverbNode = this.ctx.createConvolver();
                 this.reverbNode.buffer = this.createImpulseResponse();
-
-                // Connections
                 this.masterGain.connect(this.compressor);
                 this.compressor.connect(this.ctx.destination);
-                
-                // ALSO connect compressor to our recording destination
                 this.compressor.connect(this.recordingStreamDest);
-                
-                // Reverb Send (Parallel)
                 this.reverbGain.connect(this.reverbNode);
                 this.reverbNode.connect(this.compressor); 
+            }
+
+            // Route external source (like Mic) to FX chain
+            connectToFx(sourceNode) {
+                if (this.fxNode) {
+                    sourceNode.connect(this.fxNode);
+                } else {
+                    sourceNode.connect(this.compressor);
+                }
             }
 
             toggleGlobalRecording() {
@@ -285,23 +341,20 @@
 
             createImpulseResponse() {
                 const rate = this.ctx.sampleRate;
-                const length = rate * 2.5; // Longer tail
+                const length = rate * 2.5;
                 const decay = 2.0;
                 const impulse = this.ctx.createBuffer(2, length, rate);
                 const impulseL = impulse.getChannelData(0);
                 const impulseR = impulse.getChannelData(1);
-
                 for (let i = 0; i < length; i++) {
                     const n = i / length;
                     const env = Math.pow(1 - n, decay);
-                    // Stereo noise
                     impulseL[i] = (Math.random() * 2 - 1) * env;
                     impulseR[i] = (Math.random() * 2 - 1) * env;
                 }
                 return impulse;
             }
 
-            // --- DRONE ---
             getFreq(note) {
                 const notes = { 
                     'C2': 65.41, 'D2': 73.42, 'E2': 82.41, 'F2': 87.31, 'G2': 98.00, 'A2': 110.00, 'B2': 123.47,
@@ -326,38 +379,31 @@
             }
 
             startDrone() {
-                if (this.workletReady && appState.audioEngineMode === 'high-fidelity') {
-                    // --- HIGH QUALITY RUST-STYLE ENGINE ---
-                    this.droneOsc = new AudioWorkletNode(this.ctx, 'shed-processor', {
-                        parameterData: {
-                            frequency: this.getFreq(this.droneNote),
-                            cutoff: 400,
-                            resonance: 0.6,
-                            waveform: 1 // Always Saw for drone as per original
-                        }
-                    });
-                    this.droneGain = this.ctx.createGain();
-                    this.droneGain.gain.value = 0.15;
-                    this.droneOsc.connect(this.droneGain);
-                    this.droneGain.connect(this.ctx.destination);
-                } else {
-                    // --- FALLBACK TO STANDARD ---
+                let useHiFi = this.isHiFiAvailable();
+                if (useHiFi) {
+                    try {
+                        this.droneOsc = new AudioWorkletNode(this.ctx, 'shed-processor', {
+                            parameterData: { frequency: this.getFreq(this.droneNote), cutoff: 400, resonance: 0.6, waveform: 1 }
+                        });
+                        this.droneGain = this.ctx.createGain();
+                        this.droneGain.gain.value = 0.15;
+                        this.droneOsc.connect(this.droneGain);
+                        this.droneGain.connect(this.ctx.destination);
+                    } catch (e) { useHiFi = false; }
+                }
+                if (!useHiFi) {
                     this.droneOsc = this.ctx.createOscillator();
                     this.droneOsc.type = 'sawtooth';
                     this.droneOsc.frequency.value = this.getFreq(this.droneNote);
-                    
                     const filter = this.ctx.createBiquadFilter();
                     filter.type = 'lowpass';
                     filter.frequency.value = 400;
-
                     this.droneGain = this.ctx.createGain();
                     this.droneGain.gain.value = 0.15;
-
                     this.droneOsc.connect(filter);
                     filter.connect(this.droneGain);
-                    this.droneGain.connect(this.ctx.destination); 
+                    this.droneGain.connect(this.ctx.destination);
                 }
-                
                 if (this.droneOsc.start) this.droneOsc.start();
                 this.isPlayingDrone = true;
                 renderToolbar();
@@ -367,24 +413,13 @@
                 if (this.droneOsc) {
                     const now = this.ctx.currentTime;
                     this.droneGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-                    
-                    if (this.droneOsc.stop) {
-                        this.droneOsc.stop(now + 0.5);
-                    } else {
-                        // For AudioWorkletNode, just disconnect after ramp
-                        setTimeout(() => {
-                            if (this.droneOsc) this.droneOsc.disconnect();
-                            this.droneOsc = null;
-                        }, 500);
-                    }
-                    
-                    if (this.droneOsc && this.droneOsc.stop) this.droneOsc = null;
+                    if (this.droneOsc.stop) this.droneOsc.stop(now + 0.5);
+                    else setTimeout(() => { if (this.droneOsc) this.droneOsc.disconnect(); this.droneOsc = null; }, 500);
                 }
                 this.isPlayingDrone = false;
                 renderToolbar();
             }
 
-            // --- METRONOME ---
             toggleMetronome() {
                 this.init();
                 this.isPlayingMetronome = !this.isPlayingMetronome;
@@ -400,7 +435,6 @@
             scheduler() {
                 const lookahead = 25.0; 
                 const scheduleAheadTime = 0.1;
-
                 while (this.nextNoteTime < this.ctx.currentTime + scheduleAheadTime) {
                     this.scheduleMetronomeNote(this.nextNoteTime);
                     this.nextNote();
@@ -434,17 +468,12 @@
                 this.instrument = type;
             }
 
-            // --- JAM STATION (Backing Tracks) ---
             playBackingTrack(track) {
                 this.init();
-                // If switching tracks, stop current
                 if (this.isPlayingTrack) {
                     this.stopBackingTrack();
-                    if (this.activeTrack && this.activeTrack.id === track.id) {
-                        return; // Just stop if it was same track
-                    }
+                    if (this.activeTrack && this.activeTrack.id === track.id) return;
                 }
-                
                 this.activeTrack = track;
                 this.isPlayingTrack = true;
                 this.currentChordIndex = 0;
@@ -452,7 +481,6 @@
                 this.beatCount = 0;
                 this.nextChordTime = this.ctx.currentTime + 0.1;
                 this.tempo = track.bpm;
-                
                 render(); 
                 this.trackScheduler();
             }
@@ -473,15 +501,10 @@
             trackScheduler() {
                 const lookahead = 50.0;
                 const scheduleAheadTime = 0.1;
-
                 while (this.nextChordTime < this.ctx.currentTime + scheduleAheadTime) {
                     if (!this.activeTrack) return;
-
-                    // Calculate total beats elapsed to determine chord changes
                     const totalBeatsInProgression = this.activeTrack.progression.reduce((sum, chord) => sum + chord.beats, 0);
                     const beatInProgression = this.beatCount % totalBeatsInProgression;
-
-                    // Calculate which chord we should be on
                     let beatsAccumulated = 0;
                     let newChordIndex = 0;
                     for (let i = 0; i < this.activeTrack.progression.length; i++) {
@@ -491,30 +514,22 @@
                             break;
                         }
                     }
-
-                    // Update current chord index if changed
                     if (newChordIndex !== this.currentChordIndex) {
                         this.currentChordIndex = newChordIndex;
-                        if (!this.isScaleDisplayPaused) render(); // Re-render to update scale panel
+                        if (!this.isScaleDisplayPaused) render(); 
                     }
-
                     const chord = this.activeTrack.progression[this.currentChordIndex];
-                    this.scheduleNote(chord, this.nextChordTime); // renamed from scheduleChord to keep it consistent
-                    
+                    this.scheduleNote(chord, this.nextChordTime); 
                     if (!this.isScaleDisplayPaused) {
                         const drawTime = (this.nextChordTime - this.ctx.currentTime) * 1000;
                         const idx = this.currentChordIndex;
-                        setTimeout(() => {
-                            updateJamVisualizer(chord, idx);
-                        }, Math.max(0, drawTime));
+                        setTimeout(() => { updateJamVisualizer(chord, idx); }, Math.max(0, drawTime));
                     }
-
                     const beats = chord.beats; 
                     const secondsPerBeat = 60.0 / this.tempo;
                     this.nextChordTime += beats * secondsPerBeat;
                     this.beatCount += beats;
                 }
-                
                 if(this.isPlayingTrack) {
                     this.trackInterval = setTimeout(() => this.trackScheduler(), lookahead);
                 }
@@ -523,101 +538,356 @@
             scheduleNote(chordObj, time) {
                 const duration = (chordObj.beats * (60.0 / this.tempo)) - 0.1; 
                 const notes = chordObj.notes; 
-
-                // --- 10x SOUND UPGRADES ---
-                
                 notes.forEach((n, i) => {
-                    const noteTime = time + (i * this.strumSpeed); // Dynamic Strum
+                    const noteTime = time + (i * this.strumSpeed); 
                     const freq = this.getFreq(n);
-                    
-                    // Humanize Velocity
                     const velocity = 0.8 + (Math.random() * 0.4); 
-                    const baseVol = i === 0 ? 0.2 : 0.15; // Root note louder
+                    const baseVol = i === 0 ? 0.2 : 0.15; 
                     const finalVol = baseVol * velocity;
-
-                    // Dual Oscillator for Thickness (Detuned Chorus)
-                    this.createVoice(freq, noteTime, duration, finalVol, 0); // Center
-                    this.createVoice(freq * 1.004, noteTime, duration, finalVol * 0.5, -0.4); // Left-ish
-                    this.createVoice(freq * 0.996, noteTime, duration, finalVol * 0.5, 0.4);  // Right-ish
+                    this.createVoice(freq, noteTime, duration, finalVol, 0); 
+                    this.createVoice(freq * 1.004, noteTime, duration, finalVol * 0.5, -0.4); 
+                    this.createVoice(freq * 0.996, noteTime, duration, finalVol * 0.5, 0.4); 
                 });
             }
 
+            // Refactored createVoice to use start/stop logic
             createVoice(freq, time, duration, vol, pan) {
+                // Convert freq to approximate MIDI note for tracking (not perfect but usable for unique ID if needed, 
+                // though sequencer doesn't use activeVoices map usually. We'll generate a unique ID).
+                const id = 'seq_' + Date.now() + '_' + Math.random();
+                
+                const voice = this.startVoice(freq, time, vol, pan, id);
+                
+                if (voice) {
+                    this.stopVoice(id, time + duration);
+                }
+            }
+
+            // --- MPC / SAMPLER ENGINE ---
+            playBuffer(buffer, time, params = {}) {
+                if (!buffer || !this.ctx) return;
+                
+                // 1. Source
+                const source = this.ctx.createBufferSource();
+                source.buffer = buffer;
+                
+                // Pitch/Rate
+                if (params.pitch !== undefined) {
+                    // Semitones to rate
+                    source.playbackRate.value = Math.pow(2, params.pitch / 12);
+                }
+
+                // 2. Amp Envelope / Gain
+                const gain = this.ctx.createGain();
+                const vol = params.vol !== undefined ? params.vol : 1.0;
+                gain.gain.setValueAtTime(vol, time);
+                
+                // 3. Panner
+                const panner = this.ctx.createStereoPanner();
+                panner.pan.value = params.pan || 0;
+
+                // 4. Graph
+                source.connect(gain);
+                gain.connect(panner);
+                
+                if (this.fxNode) {
+                    panner.connect(this.fxNode);
+                } else {
+                    panner.connect(this.compressor);
+                }
+
+                // Calculate offset and duration based on start/end (normalized 0-1)
+                const offset = (params.start || 0) * buffer.duration;
+                const end = (params.end !== undefined ? params.end : 1.0) * buffer.duration;
+                const duration = Math.max(0, end - offset);
+
+                source.start(time, offset, duration);
+                
+                // Cleanup
+                source.onended = () => {
+                    gain.disconnect();
+                    panner.disconnect();
+                };
+            }
+
+            // New method for MIDI Note On
+            noteOn(note, velocity) {
+                console.log(`SoundEngine.noteOn: Note=${note}, Vel=${velocity}`);
+                
+                // Auto-init if needed
+                if (!this.ctx) {
+                    console.log("SoundEngine: Auto-initializing context...");
+                    this.init();
+                }
+                if (this.ctx.state === 'suspended') {
+                    console.log("SoundEngine: Resuming context...");
+                    this.ctx.resume();
+                }
+
+                const freq = 440 * Math.pow(2, (note - 69) / 12);
+                const vol = (velocity / 127) * 0.5; // Scale velocity
+                console.log(`SoundEngine: Starting voice Freq=${freq}, Vol=${vol}`);
+                
+                // Use note number as ID for polyphony tracking
+                this.startVoice(freq, this.ctx.currentTime, vol, 0, note);
+            }
+
+            // New method for MIDI Note Off
+            noteOff(note) {
+                this.stopVoice(note, this.ctx.currentTime);
+            }
+
+            startVoice(freq, time, vol, pan, id) {
+                // Determine if we should use HiFi or Standard
+                let useHiFi = this.isHiFiAvailable();
+                const p = this.currentSynthPreset;
+                
+                // Audio Graph Nodes
                 const panner = this.ctx.createStereoPanner();
                 const gain = this.ctx.createGain();
                 panner.pan.value = pan;
 
                 let source;
-                let filter;
+                // Standard engine variables (initialized to null)
+                let filter = null;
+                let source2 = null;
+                let mix1 = null;
+                let mix2 = null;
 
-                if (this.workletReady && appState.audioEngineMode === 'high-fidelity') {
-                    // --- CLASSIC PRESET ENGINE ---
-                    const p = this.currentSynthPreset;
-                    source = new AudioWorkletNode(this.ctx, 'shed-processor', {
-                        parameterData: {
-                            frequency: freq,
-                            cutoff: p.cutoff,
-                            resonance: p.res,
-                            waveform: p.wave,
-                            detune: p.detune,
-                            noise: p.noise,
-                            mode: 0,
-                            saturation: p.sat,
-                            chorusMix: p.chorus
-                        }
-                    });
-                    
-                    // Use preset envelope if desired, or keep dynamic brightness
-                    const cutoffParam = source.parameters.get('cutoff');
-                    cutoffParam.setValueAtTime(p.cutoff, time);
-                    cutoffParam.exponentialRampToValueAtTime(800, time + duration);
-                    
-                    source.connect(gain);
-                } else {
-                    // --- FALLBACK / STANDARD ---
+                // --- HIFI ENGINE ---
+                if (useHiFi) {
+                    try {
+                        source = new AudioWorkletNode(this.ctx, 'shed-processor', {
+                            parameterData: {
+                                frequency: freq,
+                                cutoff: p.cutoff,
+                                resonance: p.res,
+                                waveform: p.wave,
+                                detune: p.detune,
+                                noise: p.noise,
+                                mode: 0,
+                                saturation: p.sat,
+                                chorusMix: p.chorus
+                            }
+                        });
+
+                        // Filter Envelope (Internal to worklet or simulated via param automation)
+                        // The worklet has a 'cutoff' param we can modulate
+                        const cutoffParam = source.parameters.get('cutoff');
+                        cutoffParam.setValueAtTime(p.cutoff, time);
+                        // Simple envelope sweep
+                        cutoffParam.exponentialRampToValueAtTime(Math.max(800, p.cutoff * 0.3), time + 0.5); // Fixed decay for now
+
+                        source.connect(gain);
+                    } catch (e) {
+                        console.warn("Voice worklet failed:", e.message);
+                        useHiFi = false;
+                    }
+                }
+
+                // --- STANDARD ENGINE ---
+                if (!useHiFi) {
+                    const waveTypes = ['sine', 'sawtooth', 'square', 'triangle'];
                     source = this.ctx.createOscillator();
-                    source.type = this.instrument; 
+                    source.type = waveTypes[p.wave] || 'triangle';
                     source.frequency.value = freq;
+
+                    source2 = this.ctx.createOscillator();
+                    source2.type = waveTypes[p.wave] || 'triangle';
+                    source2.frequency.value = freq * Math.pow(2, p.detune / 1200);
+
+                    mix1 = this.ctx.createGain();
+                    mix2 = this.ctx.createGain();
+                    mix1.gain.value = 0.6;
+                    mix2.gain.value = 0.4;
 
                     filter = this.ctx.createBiquadFilter();
                     filter.type = 'lowpass';
-                    filter.frequency.setValueAtTime(this.brightness, time); 
-                    filter.frequency.exponentialRampToValueAtTime(800, time + duration);
+                    filter.frequency.setValueAtTime(p.cutoff, time);
+                    filter.frequency.exponentialRampToValueAtTime(Math.max(400, p.cutoff * 0.3), time + 0.5);
+                    filter.Q.value = p.res * 20;
 
-                    source.connect(filter);
+                    source.connect(mix1);
+                    source2.connect(mix2);
+                    mix1.connect(filter);
+                    mix2.connect(filter);
                     filter.connect(gain);
+
+                    source.start(time);
+                    source2.start(time);
                 }
 
-                // Envelope
-                const p = this.currentSynthPreset;
-                const attack = (this.workletReady && appState.audioEngineMode === 'high-fidelity') ? p.attack : 0.02;
-                const decay = 0.1;
-                const sustain = 0.7;
-                const release = (this.workletReady && appState.audioEngineMode === 'high-fidelity') ? p.release : 0.2;
+                // --- AMP ENVELOPE (ADSR) ---
+                const attack = useHiFi && p.attack !== undefined ? p.attack : 0.02;
+                const decay = useHiFi && p.decay !== undefined ? p.decay : 0.1;
+                const sustain = useHiFi && p.sustain !== undefined ? p.sustain : 0.7;
+                // Release is handled in stopVoice, but we set decay here
+                
+                // Incorporate preset volume trim (default 1.0)
+                const presetVol = p.vol !== undefined ? p.vol : 1.0;
+                const finalVol = vol * presetVol;
 
                 gain.gain.setValueAtTime(0, time);
-                gain.gain.linearRampToValueAtTime(vol, time + attack);
-                gain.gain.exponentialRampToValueAtTime(vol * sustain, time + attack + decay);
-                gain.gain.exponentialRampToValueAtTime(0.001, time + duration + release);
+                gain.gain.linearRampToValueAtTime(finalVol, time + attack);
+                gain.gain.exponentialRampToValueAtTime(Math.max(finalVol * sustain, 0.001), time + attack + decay);
 
+                // --- OUTPUT ---
                 gain.connect(panner);
-                
-                // Route to Master Effects Chain
-                panner.connect(this.masterGain); 
-                panner.connect(this.reverbGain); 
+                panner.connect(this.masterGain);
+                panner.connect(this.reverbGain);
 
-                if (source.start) source.start(time);
-                
-                // Cleanup
-                if (source.stop) {
-                    source.stop(time + duration + release + 0.1);
-                } else {
-                    setTimeout(() => {
-                        source.disconnect();
-                        gain.disconnect();
-                        panner.disconnect();
-                    }, (time + duration + release + 0.5 - this.ctx.currentTime) * 1000);
+                // Store voice for release
+                const voice = {
+                    source: source,
+                    source2: source2, // only for standard
+                    gain: gain,
+                    panner: panner,
+                    nodes: [source, source2, mix1, mix2, filter, gain, panner].filter(n => n), // Track all for cleanup
+                    preset: p,
+                    filter: filter // Expose filter for tweakParam
+                };
+
+                // Save to active voices map using ID (Note number or unique ID)
+                // Stop any existing voice for this note first (monophonic per key)
+                if (this.activeVoices[id]) {
+                    this.stopVoice(id, time); 
                 }
+                this.activeVoices[id] = voice;
+
+                return voice;
+            }
+
+            stopVoice(id, time) {
+                console.log(`stopVoice: ID=${id} Time=${time.toFixed(3)}`);
+                const voice = this.activeVoices[id];
+                if (!voice) {
+                    console.warn(`stopVoice: Voice ${id} not found!`);
+                    return;
+                }
+
+                const p = voice.preset;
+                const release = p && p.release !== undefined ? p.release : 0.2;
+                
+                // Release phase - robust logic
+                try {
+                    // 1. Cancel future ramps (sustain hold, etc)
+                    voice.gain.gain.cancelScheduledValues(time);
+                    
+                    // 2. Initial fast drop target (Exponential-like)
+                    voice.gain.gain.setTargetAtTime(0, time, release / 3);
+                    
+                    // 3. HARD LIMIT: Force linear ramp to 0 by the end of release.
+                    // This ensures that even if setTargetAtTime tails off slowly, we hit true 0.
+                    voice.gain.gain.linearRampToValueAtTime(0, time + release);
+                } catch(e) {
+                    console.error("stopVoice envelope error:", e);
+                }
+
+                // Stop oscillators
+                const stopTime = time + release + 0.1;
+                try {
+                    if (voice.source && typeof voice.source.stop === 'function') voice.source.stop(stopTime);
+                    if (voice.source2 && typeof voice.source2.stop === 'function') voice.source2.stop(stopTime);
+                } catch(e) {
+                     console.error("stopVoice source stop error:", e);
+                }
+
+                // Cleanup graph
+                setTimeout(() => {
+                    try {
+                        voice.gain.disconnect();
+                        voice.panner.disconnect();
+                        if (voice.source) voice.source.disconnect(); // Ensure worklet is disconnected
+                        console.log(`stopVoice: Voice ${id} cleaned up.`);
+                    } catch(e) {}
+                }, (release + 0.2) * 1000);
+
+                delete this.activeVoices[id];
+            }
+
+            tweakParam(param, val) { // val is 0-1 normalized
+                console.log(`tweakParam: ${param} = ${val}`);
+                const p = this.currentSynthPreset;
+                if (!p) return;
+
+                // 1. Update Preset Data
+                let targetVal;
+                if (param === 'cutoff') {
+                    targetVal = 20 + (val * val * 10000); // Exp taper 10k max
+                    p.cutoff = targetVal;
+                } else if (param === 'resonance') {
+                    targetVal = val * 0.95;
+                    p.res = targetVal;
+                } else if (param === 'attack') {
+                    p.attack = 0.001 + (val * 2.0);
+                } else if (param === 'decay') {
+                    p.decay = 0.01 + (val * 2.0);
+                } else if (param === 'sustain') {
+                    p.sustain = val;
+                } else if (param === 'release') {
+                    p.release = 0.05 + (val * 5.0);
+                } else if (param === 'volume') {
+                    p.vol = val * 2.0;
+                } else if (param === 'preset') {
+                    // Map 0-1 to preset index
+                    const idx = Math.floor(val * (this.presets.synth.length - 0.01));
+                    if (this.presets.synth[idx] && this.presets.synth[idx].id !== this.currentSynthPreset.id) {
+                         this.currentSynthPreset = this.presets.synth[idx];
+                         console.log("MIDI Preset Change:", this.currentSynthPreset.name);
+                         render(); // Update UI
+                         return; // Don't update active voices for this param change
+                    }
+                } else if (['drive', 'delay', 'reverb'].includes(param)) {
+                    if (this.fxNode) {
+                        const now = this.ctx.currentTime;
+                        if (param === 'drive') this.fxNode.parameters.get('drive').setTargetAtTime(val, now, 0.1);
+                        if (param === 'delay') { // Dual param: Mix + Feedback
+                            this.fxNode.parameters.get('delayMix').setTargetAtTime(val > 0.05 ? 0.4 : 0, now, 0.1); 
+                            this.fxNode.parameters.get('delayFeedback').setTargetAtTime(Math.min(0.9, val), now, 0.1);
+                        }
+                        if (param === 'reverb') this.fxNode.parameters.get('reverbMix').setTargetAtTime(val, now, 0.1);
+                    }
+                }
+
+                // 2. Update Active Voices
+                const now = this.ctx.currentTime;
+                Object.values(this.activeVoices).forEach(v => {
+                    // Update Output Gain for Volume
+                    if (param === 'volume') {
+                        // The base volume is set in startVoice, we need to scale it.
+                        // However, startVoice envelopes the gain. We can't just set value.
+                        // Best approach: Modulate the MASTER gain or the individual voice gain if possible.
+                        // Since voice.gain has an ADSR envelope, touching it breaks the envelope.
+                        // We should likely update this.masterGain or add a 'trim' gain node per voice.
+                        // For simplicity in this architecture, we will update the PRESET, 
+                        // and startVoice needs to read p.vol.
+                        
+                        // BUT, user wants real-time.
+                        // Let's assume startVoice sets peak gain. We can't easily scale it without a secondary gain node.
+                        // Workaround: We will use the existing `this.masterGain` for global volume if that's the intent?
+                        // No, 'volume' usually implies the patch volume. 
+                        // Let's try to update the masterGain of the engine? No that affects everything.
+                        
+                        // OK, let's look at startVoice. It ramps `gain` to `vol`.
+                        // We can't change that target easily during the ramp. 
+                        // We will just let new notes pick up the new volume.
+                        // OR we can try to scale the audio context destination gain?
+                    }
+
+                    // HiFi Engine
+                    if (v.source instanceof AudioWorkletNode) {
+                        try {
+                            const params = v.source.parameters;
+                            if (param === 'cutoff') params.get('cutoff').setTargetAtTime(targetVal, now, 0.1);
+                            if (param === 'resonance') params.get('resonance').setTargetAtTime(targetVal, now, 0.1);
+                        } catch(e) {}
+                    } 
+                    // Standard Engine
+                    else if (v.filter) {
+                        if (param === 'cutoff') v.filter.frequency.setTargetAtTime(targetVal, now, 0.1);
+                        if (param === 'resonance') v.filter.Q.setTargetAtTime(targetVal * 20, now, 0.1);
+                    }
+                });
             }
         }
 
@@ -717,9 +987,415 @@
             return newTrack;
         }
 
+        // --- MIDI CONTROLLER ---
+        class MidiController {
+            constructor() {
+                this.midiAccess = null;
+                this.isEnabled = false;
+            }
+
+            async init() {
+                if (navigator.requestMIDIAccess) {
+                    try {
+                        const access = await navigator.requestMIDIAccess();
+                        this.midiAccess = access;
+                        this.isEnabled = true;
+                        
+                        // Listen for connection changes
+                        access.onstatechange = (e) => this.onStateChange(e);
+
+                        // Hook up existing inputs
+                        for (let input of access.inputs.values()) {
+                            input.onmidimessage = (e) => this.onMidiMessage(e);
+                            console.log(`MIDI Input connected: ${input.name}`);
+                        }
+                        
+                        return true;
+                    } catch (e) {
+                        console.warn("MIDI Access Failed:", e);
+                        alert("MIDI Access Failed: " + e.message);
+                        return false;
+                    }
+                } else {
+                    alert("Web MIDI API is not supported in this browser/context. Try using HTTPS or localhost.");
+                    return false;
+                }
+            }
+
+            onStateChange(e) {
+                const port = e.port;
+                if (port.type === 'input' && port.state === 'connected') {
+                    port.onmidimessage = (e) => this.onMidiMessage(e);
+                    console.log(`MIDI Input connected: ${port.name}`);
+                }
+            }
+
+            onMidiMessage(event) {
+                const [status, data1, data2] = event.data;
+                const type = status & 0xF0;
+                
+                // Note On (144)
+                if (type === 144 && data2 > 0) {
+                    this.noteOn(data1, data2);
+                }
+                // Note Off (128) or Note On with velocity 0
+                else if (type === 128 || (type === 144 && data2 === 0)) {
+                    this.noteOff(data1);
+                }
+                // Control Change (176)
+                else if (type === 176) {
+                    this.controlChange(data1, data2);
+                }
+            }
+
+            controlChange(cc, value) {
+                if (window.studio && window.studio.handleMidiCC) {
+                    window.studio.handleMidiCC(cc, value);
+                }
+            }
+
+            noteOn(note, velocity) {
+                console.log(`MidiController.noteOn: ${note}, ${velocity}`);
+                
+                if (!window.audio) return;
+                
+                // 1. Check for MIDI Mappings (Pads triggering Actions)
+                if (window.studio && window.studio.handleMidiNote) {
+                    const handled = window.studio.handleMidiNote(note, velocity);
+                    if (handled) return; // Don't play synth if mapped to a button
+                }
+
+                // Ensure audio context is running
+                if (window.audio.ctx) {
+                    if (window.audio.ctx.state === 'suspended') {
+                        console.log("Resuming AudioContext on MIDI...");
+                        window.audio.ctx.resume();
+                    }
+                } else {
+                    console.log("Initializing AudioContext on MIDI...");
+                    window.audio.init();
+                }
+                
+                // Trigger SoundEngine
+                if (window.audio.noteOn) {
+                    window.audio.noteOn(note, velocity);
+                }
+
+                // Visual Indicator
+                const el = document.getElementById('midi-activity');
+                if (el) {
+                    el.classList.remove('bg-stone-700');
+                    el.classList.add('bg-orange-500', 'shadow-[0_0_8px_rgba(251,146,60,0.8)]');
+                    setTimeout(() => {
+                        if (el) {
+                            el.classList.remove('bg-orange-500', 'shadow-[0_0_8px_rgba(251,146,60,0.8)]');
+                            el.classList.add('bg-stone-700');
+                        }
+                    }, 100);
+                }
+            }
+
+            noteOff(note) {
+                // Note Off logic for mapped actions? Usually actions trigger on NoteOn.
+                if (window.audio && window.audio.noteOff) {
+                    window.audio.noteOff(note);
+                }
+            }
+        }
+
+        // --- MPC ENGINE ---
+        class MPC {
+            constructor() {
+                // 16 Pads
+                this.pads = Array(16).fill(0).map((_, i) => ({
+                    id: i,
+                    name: `Pad ${i+1}`,
+                    buffer: null,
+                    isRecording: false,
+                    params: { vol: 1.0, pitch: 0, pan: 0, start: 0, end: 1.0 },
+                    color: 'stone', // Visual color
+                    steps: Array(16).fill(0) // Sequencer steps for this pad
+                }));
+                
+                this.selectedPadIndex = 0;
+                this.kits = {
+                    '808': { name: "Classic 808", desc: "Deep Subs & Snappy Hats" },
+                    '909': { name: "House 909", desc: "Punchy Kicks" },
+                    'lofi': { name: "Lo-Fi Dust", desc: "Vinyl Crackle & Chill" },
+                    'boom': { name: "Boom Bap", desc: "MPC60 Swing" }
+                };
+                this.activeKit = '808';
+                
+                // Swing
+                this.swing = 0.0; // 0.0 to 0.5 (MPC Swing)
+
+                // Classic Patterns
+                this.patternLibrary = {
+                    'basic': {
+                        name: "Basic Rock",
+                        data: { 0: [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0], 4: [0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0], 8: [1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0] }
+                    },
+                    'boombap': {
+                        name: "Boom Bap",
+                        swing: 0.3,
+                        data: { 
+                            0: [1,0,0,1,0,0,0,0,0,0,1,0,0,1,0,0], // Kick
+                            4: [0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0], // Snare
+                            8: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]  // Hats
+                        }
+                    },
+                    'house': {
+                        name: "90s House",
+                        swing: 0.1,
+                        data: {
+                            0: [1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0], // 4-on-floor
+                            4: [0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0], // Snare
+                            9: [0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0]  // Open Hat
+                        }
+                    },
+                    'funky': {
+                        name: "Funky Drummer",
+                        swing: 0.2,
+                        data: {
+                            0: [1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0],
+                            4: [0,0,0,0,1,0,0,1,0,0,0,0,1,0,0,1], // Ghost notes
+                            8: [1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0]
+                        }
+                    },
+                    'trap': {
+                        name: "Trap Beat",
+                        swing: 0.0,
+                        data: {
+                            0: [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],
+                            4: [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0], // Snare on 3 (step 8) usually in half-time, here 140bpm logic
+                            8: [1,0,1,0,1,1,1,0,1,0,1,0,1,1,1,1]  // Rolling hats
+                        }
+                    }
+                };
+            }
+
+            loadPattern(pid) {
+                const pat = this.patternLibrary[pid];
+                if (!pat) return;
+                
+                this.clearPattern();
+                this.swing = pat.swing || 0;
+                
+                Object.keys(pat.data).forEach(padIdx => {
+                    if (this.pads[padIdx]) {
+                        this.pads[padIdx].steps = [...pat.data[padIdx]];
+                    }
+                });
+                render();
+            }
+
+            get selectedPad() {
+                return this.pads[this.selectedPadIndex];
+            }
+
+            selectPad(idx) {
+                this.selectedPadIndex = idx;
+                render();
+            }
+
+            triggerPad(idx, time = 0) {
+                const pad = this.pads[idx];
+                if (!pad) return;
+
+                // Visual Feedback
+                const padEl = document.getElementById(`mpc-pad-${idx}`);
+                if (padEl) {
+                    padEl.classList.add('bg-cyan-400', 'scale-95');
+                    setTimeout(() => padEl.classList.remove('bg-cyan-400', 'scale-95'), 100);
+                }
+
+                if (pad.buffer) {
+                    // Play Sample
+                    if (window.audio) {
+                        window.audio.playBuffer(pad.buffer, time || window.audio.ctx.currentTime, pad.params);
+                    }
+                } else {
+                    // Synthesize based on Kit
+                    if (window.studio) {
+                        const now = time || window.audio.ctx.currentTime;
+                        const kit = this.activeKit;
+                        
+                        // 808 Mappings
+                        if (kit === '808') {
+                            if (idx === 0) window.studio.playKick(now, 1.0); // Kick 1
+                            else if (idx === 1) window.studio.playKick(now, 0.8); // Kick 2
+                            else if (idx === 2) window.studio.playBass(now, 50, 0.5, 0.8); // Sub
+                            else if (idx === 3) window.studio.playSynthSound('sine', now, 150, 0.1, 0.5); // Tom
+                            else if (idx === 4) window.studio.playSnare(now, 1.0); // Snare 1
+                            else if (idx === 5) window.studio.playSnare(now, 0.7); // Snare 2
+                            else if (idx === 6) window.studio.playSynthSound('triangle', now, 800, 0.05, 0.3); // Rim/Clap approx
+                            else if (idx === 7) window.studio.playSynthSound('triangle', now, 1200, 0.02, 0.3); // Rim
+                            else if (idx === 8) window.studio.playHiHat(now, 1.0); // CH
+                            else if (idx === 9) window.studio.playHiHat(now, 0.8); // OH
+                            else if (idx === 14) window.studio.playSynthSound('sawtooth', now, 800, 0.1, 0.2); // Zap
+                            else window.studio.playSynthSound('sine', now, 200 + (idx * 100), 0.1, 0.3);
+                        } 
+                        // 909 Mappings
+                        else if (kit === '909') {
+                            // Punchier settings
+                            if (idx === 0) window.studio.playKick(now, 1.2); 
+                            else if (idx === 4) window.studio.playSnare(now, 1.2);
+                            else if (idx === 8) window.studio.playHiHat(now, 1.0);
+                            else window.studio.playSynthSound('square', now, 200 + (idx * 100), 0.1, 0.3);
+                        }
+                        // Default Fallback
+                        else {
+                            if (idx < 4) window.studio.playKick(now, 1.0);
+                            else if (idx < 8) window.studio.playSnare(now, 1.0);
+                            else if (idx < 12) window.studio.playHiHat(now, 1.0);
+                            else window.studio.playSynthSound('sine', now, 440 + (idx * 50), 0.2, 0.5);
+                        }
+                    }
+                }
+            }
+            
+            toggleStep(stepIdx) {
+                const pad = this.selectedPad;
+                pad.steps[stepIdx] = pad.steps[stepIdx] ? 0 : 1;
+                render();
+            }
+            
+            clearPattern() {
+                this.pads.forEach(p => p.steps.fill(0));
+                render();
+            }
+
+            // --- LOADING & SAMPLING ---
+            async loadKit(kitId) {
+                this.activeKit = kitId;
+                if (!window.audio || !window.audio.ctx) return;
+                
+                console.log(`Generating Kit: ${kitId}...`);
+                const ctx = window.audio.ctx;
+                const sr = ctx.sampleRate;
+                
+                // Helper to render a synth function to buffer
+                const renderToBuffer = async (renderFn, duration, vol = 1.0) => {
+                    const offlineCtx = new OfflineAudioContext(1, sr * duration, sr);
+                    // Use a temporary object or bind to mock StudioTools behavior if needed,
+                    // but our refactored playKick etc. now take a targetCtx!
+                    renderFn(0, vol, offlineCtx);
+                    return await offlineCtx.startRendering();
+                };
+                
+                // Clear existing
+                this.pads.forEach(p => p.buffer = null);
+                
+                // Apply Names and Generate Buffers
+                const kitNames808 = ['Kick 1', 'Kick 2', 'Sub', 'Tom', 'Snare 1', 'Snare 2', 'Clap', 'Rim', 'Hat Cl', 'Hat Op', 'Cymbal', 'Shaker', 'Cowbell', 'Clave', 'Zap', 'Laser'];
+                const kitNames909 = ['Kick Main', 'Kick Hard', 'Kick Low', 'Tom', 'Snare Main', 'Snare Br', 'Clap', 'Rim', 'CH', 'OH', 'Ride', 'Crash', 'Tamb', 'Agogo', 'FX 1', 'FX 2'];
+
+                const names = kitId === '808' ? kitNames808 : kitNames909;
+                
+                for (let i = 0; i < 16; i++) {
+                    this.pads[i].name = names[i] || `Pad ${i+1}`;
+                    
+                    // Simple generation logic based on index and kit
+                    try {
+                        if (kitId === '808') {
+                            if (i === 0) this.pads[i].buffer = await renderToBuffer((t, v, c) => studio.playKick(t, v, c), 0.5, 1.0);
+                            else if (i === 1) this.pads[i].buffer = await renderToBuffer((t, v, c) => studio.playKick(t, v, c), 0.4, 0.8);
+                            else if (i === 4) this.pads[i].buffer = await renderToBuffer((t, v, c) => studio.playSnare(t, v, c), 0.3, 1.0);
+                            else if (i === 8) this.pads[i].buffer = await renderToBuffer((t, v, c) => studio.playHiHat(t, v, c), 0.1, 1.0);
+                            else if (i === 9) this.pads[i].buffer = await renderToBuffer((t, v, c) => studio.playHiHat(t, v, c), 0.3, 0.8);
+                        } else if (kitId === '909') {
+                            // Similar for 909...
+                            if (i === 0) this.pads[i].buffer = await renderToBuffer((t, v, c) => studio.playKick(t, v, c), 0.4, 1.2);
+                            else if (i === 4) this.pads[i].buffer = await renderToBuffer((t, v, c) => studio.playSnare(t, v, c), 0.2, 1.2);
+                            else if (i === 8) this.pads[i].buffer = await renderToBuffer((t, v, c) => studio.playHiHat(t, v, c), 0.15, 1.0);
+                        }
+                    } catch(e) { console.warn(`Failed to gen pad ${i}`, e); }
+                }
+                
+                render();
+            }
+
+            async loadSampleFromFile(padIdx, file) {
+                if (!file || !window.audio) return;
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const audioBuffer = await window.audio.ctx.decodeAudioData(arrayBuffer);
+                    this.pads[padIdx].buffer = audioBuffer;
+                    this.pads[padIdx].name = file.name.substring(0, 10);
+                    render();
+                } catch (e) {
+                    console.error("Sample load failed", e);
+                    alert("Could not load audio file.");
+                }
+            }
+
+            drawWaveform(canvas, buffer, params) {
+                if (!canvas || !buffer) return;
+                const ctx = canvas.getContext('2d');
+                const width = canvas.width;
+                const height = canvas.height;
+                const data = buffer.getChannelData(0);
+                const step = Math.ceil(data.length / width);
+                const amp = height / 2;
+
+                ctx.clearRect(0, 0, width, height);
+                ctx.fillStyle = '#164e63'; // bg-cyan-900/20 approx
+                ctx.fillRect(0, 0, width, height);
+
+                // Draw Waveform
+                ctx.beginPath();
+                ctx.strokeStyle = '#22d3ee'; // cyan-400
+                ctx.lineWidth = 1;
+                ctx.moveTo(0, amp);
+
+                for (let i = 0; i < width; i++) {
+                    let min = 1.0;
+                    let max = -1.0;
+                    for (let j = 0; j < step; j++) {
+                        const datum = data[(i * step) + j];
+                        if (datum < min) min = datum;
+                        if (datum > max) max = datum;
+                    }
+                    ctx.lineTo(i, (1 + min) * amp);
+                    ctx.lineTo(i, (1 + max) * amp);
+                }
+                ctx.stroke();
+
+                // Draw Trim Overlays
+                const startX = params.start * width;
+                const endX = params.end * width;
+
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(0, 0, startX, height);
+                ctx.fillRect(endX, 0, width - endX, height);
+
+                ctx.strokeStyle = '#ea580c'; // orange-600
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(startX, 0); ctx.lineTo(startX, height);
+                ctx.moveTo(endX, 0); ctx.lineTo(endX, height);
+                ctx.stroke();
+            }
+        }
+
         // --- STUDIO TOOLS ENGINE ---
         class StudioTools {
             constructor() {
+                // MIDI
+                this.midi = new MidiController();
+                this.midi.init(); 
+                
+                // MIDI Mapping
+                this.midiMappings = JSON.parse(localStorage.getItem('shed_midi_map') || '{}');
+                this.midiLearnTarget = null;
+                
+                // MPC
+                this.mpc = new MPC();
+
+                // Record Source State
+                this.recordMic = false;
+                this.recordSynth = false;
+
                 // Tuner State
                 this.tunerActive = false;
                 this.audioCtx = null;
@@ -730,8 +1406,23 @@
                 
                 // Looper State
                 this.isRecording = false;
-                this.loopBuffers = []; // Array of AudioBuffers
-                this.loopDuration = 0; // Length in seconds
+                this.sections = [
+                    { id: 'A', name: 'Part A', buffers: [], duration: 0 },
+                    { id: 'B', name: 'Part B', buffers: [], duration: 0 },
+                    { id: 'C', name: 'Part C', buffers: [], duration: 0 }
+                ];
+                this.activeSectionIndex = 0;
+                
+                // Getters for legacy compatibility
+                Object.defineProperty(this, 'loopBuffers', { 
+                    get: () => this.sections[this.activeSectionIndex].buffers,
+                    set: (v) => this.sections[this.activeSectionIndex].buffers = v
+                });
+                Object.defineProperty(this, 'loopDuration', { 
+                    get: () => this.sections[this.activeSectionIndex].duration,
+                    set: (v) => this.sections[this.activeSectionIndex].duration = v
+                });
+
                 this.looperNodes = []; // Playing source nodes
                 this.masterStartTime = 0;
                 this.recordSamples = [];
@@ -741,6 +1432,12 @@
                 this.loopVolume = 0.8;
                 this.isMonitoring = false;
                 this.monitorNode = null;
+                
+                // Song Mode
+                this.songSequence = []; // ['A', 'A', 'B', 'A']
+                this.isPlayingSequence = false;
+                this.sequenceIndex = 0;
+                this.nextSectionTime = 0;
 
                 // Visualizer State
                 this.rootKey = 'E';
@@ -773,7 +1470,52 @@
                 this.bassDistortion = 0;
                 this.bassSubOscLevel = 0.3;
 
-                // Drum Parameters
+                // Drum Kit Presets
+                this.drumKits = {
+                    // TR-808: Deep sub bass, tight snare, crisp hats (Hip-Hop, Trap, R&B)
+                    '808': {
+                        name: 'TR-808',
+                        style: 'Hip-Hop / Trap',
+                        kick: { pitch: 60, decay: 0.8 },
+                        snare: { pitch: 180, decay: 0.25, noise: 0.7 },
+                        hihat: { pitch: 8500, decay: 0.05 }
+                    },
+                    // TR-909: Punchy kick, snappy snare, open hats (House, Techno)
+                    '909': {
+                        name: 'TR-909',
+                        style: 'House / Techno',
+                        kick: { pitch: 150, decay: 0.4 },
+                        snare: { pitch: 200, decay: 0.18, noise: 0.8 },
+                        hihat: { pitch: 9000, decay: 0.12 }
+                    },
+                    // Acoustic: Natural kit sound (Rock, Pop, Jazz)
+                    'acoustic': {
+                        name: 'Acoustic Kit',
+                        style: 'Rock / Pop / Jazz',
+                        kick: { pitch: 80, decay: 0.35 },
+                        snare: { pitch: 220, decay: 0.22, noise: 0.6 },
+                        hihat: { pitch: 7500, decay: 0.15 }
+                    },
+                    // Lo-Fi: Muted, dusty, vinyl feel (Lo-Fi Hip-Hop, Chill)
+                    'lofi': {
+                        name: 'Lo-Fi Kit',
+                        style: 'Lo-Fi / Chill',
+                        kick: { pitch: 55, decay: 0.3 },
+                        snare: { pitch: 160, decay: 0.15, noise: 0.5 },
+                        hihat: { pitch: 6000, decay: 0.08 }
+                    },
+                    // Breakbeat: Tight, punchy, funk-inspired (Funk, Breaks, DnB)
+                    'breakbeat': {
+                        name: 'Breakbeat',
+                        style: 'Funk / Breaks / DnB',
+                        kick: { pitch: 100, decay: 0.25 },
+                        snare: { pitch: 240, decay: 0.12, noise: 0.85 },
+                        hihat: { pitch: 10000, decay: 0.04 }
+                    }
+                };
+                this.currentDrumKit = '909'; // Default kit
+
+                // Drum Parameters (set from kit)
                 this.kickPitch = 150;
                 this.kickDecay = 0.5;
                 this.snarePitch = 200;
@@ -781,6 +1523,9 @@
                 this.snareNoiseBalance = 0.8;
                 this.hihatPitch = 8000;
                 this.hihatDecay = 0.1;
+
+                // Apply default kit
+                this.setDrumKit('909');
 
                 // Bassline Pattern
                 this.bassPattern = 'root'; // 'root', 'octave', 'walking', 'arpeggio', 'jazz'
@@ -812,6 +1557,28 @@
                     hihat: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0]
                 };
                 this.currentStep = 0;
+            }
+
+            // --- DRUM KIT METHODS ---
+            setDrumKit(kitId) {
+                const kit = this.drumKits[kitId];
+                if (!kit) return;
+
+                this.currentDrumKit = kitId;
+                this.kickPitch = kit.kick.pitch;
+                this.kickDecay = kit.kick.decay;
+                this.snarePitch = kit.snare.pitch;
+                this.snareDecay = kit.snare.decay;
+                this.snareNoiseBalance = kit.snare.noise;
+                this.hihatPitch = kit.hihat.pitch;
+                this.hihatDecay = kit.hihat.decay;
+
+                console.log(`Drum kit: ${kit.name} (${kit.style})`);
+            }
+
+            getCurrentKitInfo() {
+                const kit = this.drumKits[this.currentDrumKit];
+                return kit ? { id: this.currentDrumKit, ...kit } : null;
             }
 
             // --- MIXER LOGIC ---
@@ -863,8 +1630,22 @@
                     }
                 }
 
+                // SWING LOGIC (MPC Style)
+                // Delay every even step (16th note)
+                let swingTime = time;
+                if (step % 2 !== 0 && this.mpc.swing > 0) {
+                    // Swing amount: 0.0 to 0.5 (where 0.5 is triplet feel, essentially)
+                    // MPC "50%" is straight, "75%" is hard swing.
+                    // Our param is 0.0-0.5.
+                    // 16th note duration = 60 / bpm / 4
+                    const sixteenthNote = 60.0 / this.bpm / 4;
+                    swingTime += sixteenthNote * (this.mpc.swing * 0.66); 
+                }
+
                 // UI Beat Update
+                // ... (Keep existing UI update logic, maybe minimal to save CPU or use swingTime)
                 setTimeout(() => {
+                    // Update main beat dots
                     const dots = document.querySelectorAll('.beat-dot');
                     dots.forEach((d, i) => {
                         const beatIdx = Math.floor(step / 4);
@@ -872,24 +1653,48 @@
                         else d.classList.remove('bg-cyan-400', 'shadow-[0_0_10px_rgba(34,211,238,1)]');
                     });
                     
+                    // Update Jam Sequencer
                     const stepDots = document.querySelectorAll('.step-dot');
                     stepDots.forEach((d, i) => {
                         if (i === step) d.classList.add('border-cyan-400', 'scale-125');
                         else d.classList.remove('border-cyan-400', 'scale-125');
                     });
-                }, Math.max(0, (time - this.jamCtx.currentTime) * 1000));
 
+                    // Update MPC Sequencer UI
+                    if (appState.view === 'mpc') {
+                        // Highlight current column in MPC grid? Or just the step sequencer below.
+                        // We need to update the visual step indicator on PADS
+                        // This is expensive to do 16 times per step in DOM.
+                        // Let's just update the "Sequencer" row at the bottom right.
+                        const pad = this.mpc.selectedPad;
+                        // Use a global marker or class?
+                        // For performance, let's just assume the re-render handles active state if we tracked it?
+                        // No, we need live highlighting.
+                        // Let's trust CSS transitions or skip heavy DOM updates here.
+                    }
+                }, Math.max(0, (swingTime - this.jamCtx.currentTime) * 1000));
+
+                // --- LEGACY JAM MIXER ---
                 const vol = this.volumes;
-                if (this.sequencer.kick[step] && vol.kick > 0) this.playKick(time, vol.kick);
-                if (this.sequencer.snare[step] && vol.snare > 0) this.playSnare(time, vol.snare);
-                if (this.sequencer.hihat[step] && vol.hihat > 0) this.playHiHat(time, vol.hihat);
+                if (this.sequencer.kick[step] && vol.kick > 0) this.playKick(swingTime, vol.kick);
+                if (this.sequencer.snare[step] && vol.snare > 0) this.playSnare(swingTime, vol.snare);
+                if (this.sequencer.hihat[step] && vol.hihat > 0) this.playHiHat(swingTime, vol.hihat);
                 
                 // Bass Note (Root on step 0, or pattern-based)
                 if (step % 4 === 0) {
                     const beatIndex = step / 4;
                     const bassFreq = this.getBassNoteForBeat(beatIndex);
-                    if (bassFreq && vol.bass > 0) this.playBass(time, bassFreq, 0.2, vol.bass);
+                    if (bassFreq && vol.bass > 0) this.playBass(swingTime, bassFreq, 0.2, vol.bass);
                 }
+
+                // --- MPC SEQUENCER ---
+                this.mpc.pads.forEach(pad => {
+                    if (pad.steps[step]) {
+                        // Velocity? Default to 1.0 for now, or store in step data?
+                        // Storing just 1/0 for now.
+                        this.mpc.triggerPad(pad.id, swingTime);
+                    }
+                });
             }
 
             toggleStep(inst, idx) {
@@ -1009,37 +1814,48 @@
                 let osc;
                 let subOsc;
                 let filter;
+                let useHiFi = audio.isHiFiAvailable();
 
-                if (audio.workletReady && appState.audioEngineMode === 'high-fidelity') {
-                    // --- CLASSIC BASS ENGINE ---
+                if (useHiFi) {
+                    try {
+                        // --- CLASSIC BASS ENGINE ---
+                        const p = audio.currentBassPreset;
+                        osc = new AudioWorkletNode(this.jamCtx, 'shed-processor', {
+                            parameterData: {
+                                frequency: freq,
+                                cutoff: p.cutoff,
+                                resonance: p.res,
+                                waveform: p.wave,
+                                detune: p.detune,
+                                noise: p.noise,
+                                mode: 0,
+                                saturation: p.sat,
+                                chorusMix: p.chorus
+                            }
+                        });
+                        subOsc = new AudioWorkletNode(this.jamCtx, 'shed-processor', {
+                            parameterData: {
+                                frequency: freq / 2,
+                                cutoff: 2000,
+                                resonance: 0,
+                                waveform: 0, // Sine for sub
+                                detune: 0,
+                                noise: 0
+                            }
+                        });
+                    } catch (e) {
+                        console.warn("WorkletNode creation failed, falling back:", e.message);
+                        useHiFi = false;
+                    }
+                }
+
+                if (!useHiFi) {
+                    // Fallback to standard oscillators (using preset values)
                     const p = audio.currentBassPreset;
-                    osc = new AudioWorkletNode(this.jamCtx, 'shed-processor', {
-                        parameterData: { 
-                            frequency: freq, 
-                            cutoff: p.cutoff, 
-                            resonance: p.res,
-                            waveform: p.wave,
-                            detune: p.detune,
-                            noise: p.noise,
-                            mode: 0,
-                            saturation: p.sat,
-                            chorusMix: p.chorus
-                        }
-                    });
-                    subOsc = new AudioWorkletNode(this.jamCtx, 'shed-processor', {
-                        parameterData: { 
-                            frequency: freq / 2, 
-                            cutoff: 2000, 
-                            resonance: 0,
-                            waveform: 0, // Sine for sub
-                            detune: 0,
-                            noise: 0
-                        }
-                    });
-                } else {
-                    // Fallback
+                    const waveTypes = ['sine', 'sawtooth', 'square', 'triangle'];
+
                     osc = this.jamCtx.createOscillator();
-                    osc.type = this.bassWaveform;
+                    osc.type = waveTypes[p.wave] || 'sawtooth';
                     osc.frequency.value = freq;
 
                     subOsc = this.jamCtx.createOscillator();
@@ -1048,8 +1864,8 @@
 
                     filter = this.jamCtx.createBiquadFilter();
                     filter.type = 'lowpass';
-                    filter.frequency.value = this.bassFilterCutoff;
-                    filter.Q.value = this.bassFilterResonance;
+                    filter.frequency.value = p.cutoff;
+                    filter.Q.value = p.res * 20;
                 }
 
                 // Gain nodes
@@ -1057,11 +1873,18 @@
                 const subGain = this.jamCtx.createGain();
                 const masterGain = this.jamCtx.createGain();
 
-                // ADSR Envelope
+                // ADSR Envelope - use preset values in hi-fi mode
+                const bp = audio.currentBassPreset;
+                const usePresetEnv = useHiFi && bp.attack !== undefined;
+                const attack = usePresetEnv ? bp.attack : this.bassAttack;
+                const decay = usePresetEnv ? bp.decay : this.bassDecay;
+                const sustain = usePresetEnv ? bp.sustain : this.bassSustain;
+                const release = usePresetEnv ? bp.release : this.bassRelease;
+
                 masterGain.gain.setValueAtTime(0, time);
-                masterGain.gain.linearRampToValueAtTime(vol, time + this.bassAttack);
-                masterGain.gain.linearRampToValueAtTime(vol * this.bassSustain, time + this.bassAttack + this.bassDecay);
-                masterGain.gain.linearRampToValueAtTime(0.001, time + duration + this.bassRelease);
+                masterGain.gain.linearRampToValueAtTime(vol, time + attack);
+                masterGain.gain.linearRampToValueAtTime(vol * sustain, time + attack + decay);
+                masterGain.gain.linearRampToValueAtTime(0.001, time + duration + release);
 
                 // Sub oscillator level
                 subGain.gain.value = this.bassSubOscLevel;
@@ -1070,7 +1893,7 @@
                 osc.connect(mainGain);
                 subOsc.connect(subGain);
 
-                if (audio.workletReady && appState.audioEngineMode === 'high-fidelity') {
+                if (useHiFi) {
                     mainGain.connect(masterGain);
                     subGain.connect(masterGain);
                 } else {
@@ -1084,10 +1907,10 @@
 
                 if (osc.start) osc.start(time);
                 if (subOsc.start) subOsc.start(time);
-                
+
                 if (osc.stop) {
-                    osc.stop(time + duration + this.bassRelease + 0.1);
-                    subOsc.stop(time + duration + this.bassRelease + 0.1);
+                    osc.stop(time + duration + release + 0.1);
+                    subOsc.stop(time + duration + release + 0.1);
                 } else {
                     setTimeout(() => {
                         osc.disconnect();
@@ -1095,7 +1918,7 @@
                         mainGain.disconnect();
                         subGain.disconnect();
                         masterGain.disconnect();
-                    }, (time + duration + this.bassRelease + 0.5 - this.jamCtx.currentTime) * 1000);
+                    }, (time + duration + release + 0.5 - this.jamCtx.currentTime) * 1000);
                 }
             }
 
@@ -1110,94 +1933,223 @@
                 return curve;
             }
 
-            playKick(time, vol) {
-                let osc;
-                if (audio.workletReady && appState.audioEngineMode === 'high-fidelity') {
-                    osc = new AudioWorkletNode(this.jamCtx, 'shed-processor', {
-                        parameterData: { frequency: this.kickPitch, cutoff: 2000, resonance: 0, mode: 1 }
-                    });
-                    const freqParam = osc.parameters.get('frequency');
-                    freqParam.setValueAtTime(this.kickPitch, time);
-                    freqParam.exponentialRampToValueAtTime(30, time + this.kickDecay);
-                } else {
-                    osc = this.jamCtx.createOscillator();
-                    osc.frequency.setValueAtTime(this.kickPitch, time);
-                    osc.frequency.exponentialRampToValueAtTime(0.01, time + this.kickDecay);
+            playKick(time, vol, targetCtx = null) {
+                const ctx = targetCtx || this.jamCtx;
+                if (!ctx) return;
+
+                let useHiFi = audio.isHiFiAvailable();
+                const startPitch = Math.max(this.kickPitch, 120); // At least 120Hz start
+                const endPitch = 35; // Drop to sub bass
+                const decay = this.kickDecay || 0.3;
+
+                if (useHiFi && !targetCtx) { // HiFi only for real-time for now, or if we ensure worklet exists in offline ctx
+                    try {
+                        const osc = new AudioWorkletNode(ctx, 'shed-processor', {
+                            parameterData: { frequency: startPitch, mode: 1 }
+                        });
+                        const freqParam = osc.parameters.get('frequency');
+                        freqParam.setValueAtTime(startPitch, time);
+                        freqParam.exponentialRampToValueAtTime(endPitch, time + decay * 0.6);
+
+                        const gain = ctx.createGain();
+                        gain.gain.setValueAtTime(vol * 0.9, time);
+                        gain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        if (audio.recordingStreamDest && !targetCtx) gain.connect(audio.recordingStreamDest);
+
+                        setTimeout(() => { try { osc.disconnect(); gain.disconnect(); } catch(e){} },
+                            (time + decay + 0.1 - ctx.currentTime) * 1000);
+                        return;
+                    } catch (e) {
+                        useHiFi = false;
+                    }
                 }
 
-                const gain = this.jamCtx.createGain();
-                gain.gain.setValueAtTime(vol, time);
-                gain.gain.exponentialRampToValueAtTime(0.01, time + this.kickDecay);
-                
-                osc.connect(gain);
-                gain.connect(this.jamCtx.destination);
-                if (audio.recordingStreamDest) gain.connect(audio.recordingStreamDest);
-                
-                if (osc.start) osc.start(time);
-                if (osc.stop) {
-                    osc.stop(time + this.kickDecay);
-                } else {
-                    setTimeout(() => osc.disconnect(), (time + this.kickDecay + 0.1 - this.jamCtx.currentTime) * 1000);
-                }
+                // === IMPROVED FALLBACK KICK ===
+                const body = ctx.createOscillator();
+                body.type = 'sine';
+                body.frequency.setValueAtTime(startPitch, time);
+                body.frequency.exponentialRampToValueAtTime(endPitch, time + decay * 0.5);
+
+                const click = ctx.createOscillator();
+                click.type = 'triangle';
+                click.frequency.setValueAtTime(800, time);
+                click.frequency.exponentialRampToValueAtTime(100, time + 0.02);
+
+                const clickGain = ctx.createGain();
+                clickGain.gain.setValueAtTime(vol * 0.3, time);
+                clickGain.gain.exponentialRampToValueAtTime(0.001, time + 0.03);
+
+                const bodyGain = ctx.createGain();
+                bodyGain.gain.setValueAtTime(vol * 0.8, time);
+                bodyGain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+
+                const shaper = ctx.createWaveShaper();
+                shaper.curve = this.makeDistortionCurve(2);
+
+                body.connect(bodyGain);
+                click.connect(clickGain);
+                bodyGain.connect(shaper);
+                clickGain.connect(shaper);
+                shaper.connect(ctx.destination);
+                if (audio.recordingStreamDest && !targetCtx) shaper.connect(audio.recordingStreamDest);
+
+                body.start(time);
+                click.start(time);
+                body.stop(time + decay + 0.1);
+                click.stop(time + 0.05);
             }
 
-            playSnare(time, vol) {
-                let node;
-                if (audio.workletReady && appState.audioEngineMode === 'high-fidelity') {
-                    node = new AudioWorkletNode(this.jamCtx, 'shed-processor', {
-                        parameterData: { frequency: this.snarePitch, cutoff: 5000, resonance: 0.2, mode: 2 }
-                    });
-                } else {
-                    // Fallback
-                    const noiseBuffer = this.jamCtx.createBuffer(1, this.jamCtx.sampleRate * 0.1, this.jamCtx.sampleRate);
-                    const output = noiseBuffer.getChannelData(0);
-                    for (let i = 0; i < noiseBuffer.length; i++) output[i] = Math.random() * 2 - 1;
-                    node = this.jamCtx.createBufferSource();
-                    node.buffer = noiseBuffer;
+            playSnare(time, vol, targetCtx = null) {
+                const ctx = targetCtx || this.jamCtx;
+                if (!ctx) return;
+
+                let useHiFi = audio.isHiFiAvailable();
+                const decay = this.snareDecay || 0.2;
+                const bodyPitch = this.snarePitch || 185;
+
+                if (useHiFi && !targetCtx) {
+                    try {
+                        const node = new AudioWorkletNode(ctx, 'shed-processor', {
+                            parameterData: { frequency: bodyPitch, mode: 2 }
+                        });
+
+                        const gain = ctx.createGain();
+                        gain.gain.setValueAtTime(vol * 0.8, time);
+                        gain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+
+                        node.connect(gain);
+                        gain.connect(ctx.destination);
+                        if (audio.recordingStreamDest && !targetCtx) gain.connect(audio.recordingStreamDest);
+
+                        setTimeout(() => { try { node.disconnect(); gain.disconnect(); } catch(e){} },
+                            (time + decay + 0.1 - ctx.currentTime) * 1000);
+                        return;
+                    } catch (e) {
+                        useHiFi = false;
+                    }
                 }
 
-                const gain = this.jamCtx.createGain();
-                gain.gain.setValueAtTime(vol, time);
-                gain.gain.exponentialRampToValueAtTime(0.01, time + this.snareDecay);
+                // === IMPROVED FALLBACK SNARE ===
+                const body = ctx.createOscillator();
+                body.type = 'triangle';
+                body.frequency.setValueAtTime(bodyPitch, time);
+                body.frequency.exponentialRampToValueAtTime(120, time + decay * 0.3);
 
-                node.connect(gain);
-                gain.connect(this.jamCtx.destination);
-                if (audio.recordingStreamDest) gain.connect(audio.recordingStreamDest);
+                const bodyGain = ctx.createGain();
+                bodyGain.gain.setValueAtTime(vol * 0.4, time);
+                bodyGain.gain.exponentialRampToValueAtTime(0.001, time + decay * 0.5);
 
-                if (node.start) node.start(time);
-                if (node.stop) {
-                    node.stop(time + this.snareDecay);
-                } else {
-                    setTimeout(() => node.disconnect(), (time + this.snareDecay + 0.1 - this.jamCtx.currentTime) * 1000);
-                }
+                const noiseLen = Math.ceil(ctx.sampleRate * decay);
+                const noiseBuffer = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+                const noiseData = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < noiseLen; i++) noiseData[i] = Math.random() * 2 - 1;
+
+                const noise = ctx.createBufferSource();
+                noise.buffer = noiseBuffer;
+
+                const hpFilter = ctx.createBiquadFilter();
+                hpFilter.type = 'highpass';
+                hpFilter.frequency.value = 2000;
+                hpFilter.Q.value = 0.7;
+
+                const lpFilter = ctx.createBiquadFilter();
+                lpFilter.type = 'lowpass';
+                lpFilter.frequency.value = 8000;
+                lpFilter.Q.value = 0.7;
+
+                const noiseGain = ctx.createGain();
+                noiseGain.gain.setValueAtTime(vol * 0.5, time);
+                noiseGain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+
+                body.connect(bodyGain);
+                noise.connect(hpFilter);
+                hpFilter.connect(lpFilter);
+                lpFilter.connect(noiseGain);
+
+                const master = ctx.createGain();
+                master.gain.value = 1.0;
+                bodyGain.connect(master);
+                noiseGain.connect(master);
+                master.connect(ctx.destination);
+                if (audio.recordingStreamDest && !targetCtx) master.connect(audio.recordingStreamDest);
+
+                body.start(time);
+                noise.start(time);
+                body.stop(time + decay + 0.1);
+                noise.stop(time + decay + 0.1);
             }
 
-            playHiHat(time, vol) {
-                let node;
-                if (audio.workletReady && appState.audioEngineMode === 'high-fidelity') {
-                    node = new AudioWorkletNode(this.jamCtx, 'shed-processor', {
-                        parameterData: { frequency: this.hihatPitch, cutoff: 8000, resonance: 0.5, mode: 3 }
-                    });
-                } else {
-                    node = this.jamCtx.createOscillator();
-                    node.type = 'square';
-                    node.frequency.setValueAtTime(this.hihatPitch, time);
+            playHiHat(time, vol, targetCtx = null) {
+                const ctx = targetCtx || this.jamCtx;
+                if (!ctx) return;
+
+                let useHiFi = audio.isHiFiAvailable();
+                const decay = this.hihatDecay || 0.08;
+                const pitch = this.hihatPitch || 8000;
+
+                if (useHiFi && !targetCtx) {
+                    try {
+                        const node = new AudioWorkletNode(ctx, 'shed-processor', {
+                            parameterData: { frequency: pitch, mode: 3 }
+                        });
+
+                        const gain = ctx.createGain();
+                        gain.gain.setValueAtTime(vol * 0.5, time);
+                        gain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+
+                        node.connect(gain);
+                        gain.connect(ctx.destination);
+                        if (audio.recordingStreamDest && !targetCtx) gain.connect(audio.recordingStreamDest);
+
+                        setTimeout(() => { try { node.disconnect(); gain.disconnect(); } catch(e){} },
+                            (time + decay + 0.1 - ctx.currentTime) * 1000);
+                        return;
+                    } catch (e) {
+                        useHiFi = false;
+                    }
                 }
 
-                const gain = this.jamCtx.createGain();
-                gain.gain.setValueAtTime(vol, time);
-                gain.gain.exponentialRampToValueAtTime(0.01, time + this.hihatDecay);
+                // === IMPROVED FALLBACK HI-HAT ===
+                const noiseLen = Math.ceil(ctx.sampleRate * decay * 1.5);
+                const noiseBuffer = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+                const noiseData = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < noiseLen; i++) noiseData[i] = Math.random() * 2 - 1;
 
-                node.connect(gain);
-                gain.connect(this.jamCtx.destination);
-                if (audio.recordingStreamDest) gain.connect(audio.recordingStreamDest);
+                const noise = ctx.createBufferSource();
+                noise.buffer = noiseBuffer;
 
-                if (node.start) node.start(time);
-                if (node.stop) {
-                    node.stop(time + this.hihatDecay);
-                } else {
-                    setTimeout(() => node.disconnect(), (time + this.hihatDecay + 0.1 - this.jamCtx.currentTime) * 1000);
-                }
+                const hpFilter = ctx.createBiquadFilter();
+                hpFilter.type = 'highpass';
+                hpFilter.frequency.value = 7000;
+                hpFilter.Q.value = 0.5;
+
+                const lpFilter = ctx.createBiquadFilter();
+                lpFilter.type = 'lowpass';
+                lpFilter.frequency.value = 12000;
+                lpFilter.Q.value = 0.5;
+
+                const peakFilter = ctx.createBiquadFilter();
+                peakFilter.type = 'peaking';
+                peakFilter.frequency.value = 10000;
+                peakFilter.Q.value = 2;
+                peakFilter.gain.value = 3;
+
+                const gain = ctx.createGain();
+                gain.gain.setValueAtTime(vol * 0.4, time);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+
+                noise.connect(hpFilter);
+                hpFilter.connect(lpFilter);
+                lpFilter.connect(peakFilter);
+                peakFilter.connect(gain);
+                gain.connect(ctx.destination);
+                if (audio.recordingStreamDest && !targetCtx) gain.connect(audio.recordingStreamDest);
+
+                noise.start(time);
+                noise.stop(time + decay + 0.1);
             }
 
             playSynthSound(type, time, freq, duration, vol) {
@@ -1319,45 +2271,340 @@
                 return sampleRate / T0;
             }
 
-            // --- LOOPER LOGIC (HIGH PRECISION) ---
-            async startRecording() {
+            switchToSection(index) {
+                // If currently recording, stop recording first but preserve mic state
+                const wasRecording = this.isRecording;
+                if (wasRecording) {
+                    this.stopRecording();
+                }
+                
+                this.stopPlayback();
+                this.activeSectionIndex = index;
+                
+                // If we were recording, the mic state should be preserved
+                // The next recording will automatically reconnect via requestMicAccess()
+                
+                render();
+            }
+
+            playSongSequence() {
+                if (this.songSequence.length === 0) return;
+                this.stopSongSequence(); 
+                
+                if (!this.audioCtx) {
+                    if (window.audio && window.audio.ctx) this.audioCtx = window.audio.ctx;
+                    else return; 
+                }
+                if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
+
+                if (!this.looperGain) {
+                    this.looperGain = this.audioCtx.createGain();
+                    this.looperGain.gain.value = this.loopVolume;
+                    this.looperGain.connect(this.audioCtx.destination);
+                }
+
+                this.isPlayingSequence = true;
+                this.sequenceIndex = 0;
+                this.playSequenceStep(this.audioCtx.currentTime);
+            }
+
+            playSequenceStep(startTime) {
+                if (!this.isPlayingSequence) return;
+                
+                const sectionId = this.songSequence[this.sequenceIndex];
+                const section = this.sections.find(s => s.id === sectionId);
+                
+                if (section && section.buffers.length > 0 && section.duration > 0) {
+                    // Update UI State for Progress Bar
+                    this.currentSequenceStartTime = startTime;
+                    this.currentSequenceDuration = section.duration;
+                    this.activeSequenceIndex = this.sequenceIndex;
+                    render(); // Update highlight in list
+
+                    // Schedule buffers
+                    section.buffers.forEach(buffer => {
+                         const source = this.audioCtx.createBufferSource();
+                         source.buffer = buffer;
+                         source.connect(this.looperGain);
+                         source.start(startTime);
+                         this.looperNodes.push(source);
+                    });
+                    
+                    this.nextSectionTime = startTime + section.duration;
+                    this.sequenceIndex = (this.sequenceIndex + 1) % this.songSequence.length;
+                    
+                    const lookahead = (section.duration - 0.1) * 1000;
+                    
+                    // Schedule next
+                    this.sequenceTimer = setTimeout(() => {
+                        this.playSequenceStep(this.nextSectionTime);
+                    }, Math.max(0, lookahead));
+                    
+                } else {
+                     // Skip empty or handle error
+                     this.sequenceIndex = (this.sequenceIndex + 1) % this.songSequence.length;
+                     // Avoid infinite loop if all empty
+                     if (this.songSequence.length > 0) {
+                        // Just stop for now if empty to be safe
+                        this.isPlayingSequence = false;
+                     }
+                }
+            }
+            
+            stopSongSequence() {
+                this.isPlayingSequence = false;
+                if (this.sequenceTimer) clearTimeout(this.sequenceTimer);
+                this.stopPlayback(); 
+            }
+
+            toggleLoopPlayback() {
+                if (this.looperNodes.length > 0 || this.isPlayingSequence) {
+                    this.stopSongSequence();
+                } else {
+                    this.startPlayback();
+                }
+                render();
+            }
+
+            async requestMicAccess() {
+                // Check if we already have valid mic access
+                if (this.micStream && this.micSource && this.audioCtx) {
+                    // Verify the stream is still active
+                    const tracks = this.micStream.getTracks();
+                    if (tracks.length > 0 && tracks[0].readyState === 'live') {
+                        return true; // Already active and valid
+                    } else {
+                        // Stream is dead, clean it up
+                        this.cleanupMicAccess();
+                    }
+                }
+
                 try {
                     if (!this.audioCtx) {
-                        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        if (!window.audio) window.audio = new SoundEngine();
+                        await window.audio.init();
+                        this.audioCtx = window.audio.ctx;
                     }
                     if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
 
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false,
+                            latency: 0
+                        }
+                    });
+                    
+                    this.micStream = stream;
+                    this.micSource = this.audioCtx.createMediaStreamSource(stream);
+                    
+                    // Monitor for device disconnection
+                    stream.getTracks().forEach(track => {
+                        track.addEventListener('ended', () => {
+                            console.warn("Microphone disconnected during session");
+                            this.cleanupMicAccess();
+                            if (this.isRecording) {
+                                this.stopRecording();
+                                alert("Microphone was disconnected. Recording stopped. Please reconnect and try again.");
+                            }
+                            render();
+                        });
+                    });
+                    
+                    console.log("Microphone Access Granted");
+                    return true;
+                } catch (e) {
+                    console.warn("Mic access failed:", e);
+                    
+                    // Provide specific error messages based on error type
+                    let errorMsg = "Could not access microphone.";
+                    if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
+                        errorMsg = "No microphone found. Please connect a microphone and refresh the page.";
+                    } else if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+                        errorMsg = "Microphone access denied. Please allow microphone access and refresh the page.";
+                    } else if (e.name === 'NotReadableError') {
+                        errorMsg = "Microphone is busy. Please close other applications using the microphone and try again.";
+                    } else if (e.name === 'OverconstrainedError') {
+                        errorMsg = "Microphone constraints not supported. Please try with a different microphone.";
+                    }
+                    
+                    alert(errorMsg);
+                    return false;
+                }
+            }
+
+            cleanupMicAccess() {
+                if (this.micStream) {
+                    this.micStream.getTracks().forEach(t => t.stop());
+                    this.micStream = null;
+                }
+                if (this.micSource) {
+                    this.micSource.disconnect();
+                    this.micSource = null;
+                }
+            }
+
+            // --- LOOPER LOGIC (HIGH PRECISION) ---
+            async recordPad(padIdx) {
+                if (this.isRecording) {
+                    this.stopPadRecording();
+                    return;
+                }
+                
+                // Select pad first if not selected
+                if (this.mpc.selectedPadIndex !== padIdx) {
+                    this.mpc.selectPad(padIdx);
+                }
+
+                const granted = await this.requestMicAccess();
+                if (!granted) return;
+                
+                try {
+                    // Processor
+                    this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
+                    this.recordSamples = [];
+                    this.recordingPadIndex = padIdx;
+                    this.isRecording = true;
+                    
+                    this.micSource.connect(this.processor);
+                    this.processor.connect(this.audioCtx.destination); // Silent path needed for Chrome
+                    
+                    this.processor.onaudioprocess = (e) => {
+                        if (this.isRecording) {
+                            const input = e.inputBuffer.getChannelData(0);
+                            this.recordSamples.push(new Float32Array(input));
+                        }
+                    };
+                    
+                    // Update Pad UI state
+                    this.mpc.pads[padIdx].isRecording = true;
+                    render();
+
+                } catch (e) {
+                    console.error("Pad Rec Error:", e);
+                }
+            }
+
+            stopPadRecording() {
+                if (!this.isRecording || this.recordingPadIndex === undefined) return;
+                
+                this.isRecording = false;
+                const padIdx = this.recordingPadIndex;
+                this.recordingPadIndex = undefined;
+                
+                // Cleanup
+                if (this.processor) { this.processor.disconnect(); this.processor = null; }
+                if (this.micSource) { this.micSource.disconnect(); this.micSource = null; }
+                if (this.micStream) { this.micStream.getTracks().forEach(t => t.stop()); this.micStream = null; }
+                
+                // Process Buffer
+                const totalLen = this.recordSamples.reduce((acc, c) => acc + c.length, 0);
+                if (totalLen > 0) {
+                    const buffer = this.audioCtx.createBuffer(1, totalLen, this.audioCtx.sampleRate);
+                    const data = buffer.getChannelData(0);
+                    let offset = 0;
+                    for (const chunk of this.recordSamples) {
+                        data.set(chunk, offset);
+                        offset += chunk.length;
+                    }
+                    
+                    // Assign to Pad
+                    this.mpc.pads[padIdx].buffer = buffer;
+                    this.mpc.pads[padIdx].name = "Rec Sample";
+                    this.mpc.pads[padIdx].isRecording = false;
+                }
+                
+                render();
+            }
+
+            async toggleMicrophone(isActive) {
+                this.recordMic = isActive;
+                render(); // Render "pending" state immediately
+
+                if (isActive) {
+                    const granted = await this.requestMicAccess();
+                    if (!granted) {
+                        this.recordMic = false; // Revert if failed
+                        render();
+                    }
+                } else {
+                    // Disable Mic
+                    if (this.micStream) {
+                        this.micStream.getTracks().forEach(t => t.stop());
+                        this.micStream = null;
+                        if (this.micSource) {
+                            this.micSource.disconnect();
+                            this.micSource = null;
+                        }
+                        console.log("Microphone Disabled");
+                    }
+                    render();
+                }
+            }
+
+            async startRecording() {
+                try {
+                    // Ensure main context is ready
+                    if (!window.audio) window.audio = new SoundEngine();
+                    await window.audio.init();
+                    this.audioCtx = window.audio.ctx;
+                    
                     if (!this.looperGain) {
                         this.looperGain = this.audioCtx.createGain();
                         this.looperGain.gain.value = this.loopVolume;
                         this.looperGain.connect(this.audioCtx.destination);
-                        // Connect to global recorder if possible
-                        if (audio.recordingStreamDest) {
-                            this.looperGain.connect(audio.recordingStreamDest);
-                        }
                     }
 
                     if (this.loopDuration > 0 && this.looperNodes.length === 0) {
                         this.startPlayback();
                     }
 
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    this.looperStream = stream;
-                    const source = this.audioCtx.createMediaStreamSource(stream);
+                    // --- INPUT ROUTING (PRINT FX) ---
+                    // Strategy: Route Mic -> FX Chain. Record 'recordingStreamDest' (which catches everything post-FX).
                     
-                    if (this.isMonitoring) {
-                        this.monitorNode = this.audioCtx.createGain();
-                        this.monitorNode.gain.value = 0.5;
-                        source.connect(this.monitorNode);
-                        this.monitorNode.connect(this.audioCtx.destination);
+                    // 1. Microphone Source - Ensure fresh connection
+                    if (this.recordMic) {
+                        const micGranted = await this.requestMicAccess();
+                        if (!micGranted) {
+                            console.error("Could not access microphone for recording");
+                            return;
+                        }
+                        
+                        // Connect mic to FX chain (disconnect first to avoid duplicate connections)
+                        if (this.micSource && window.audio) {
+                            try {
+                                // Disconnect any existing connections to avoid duplicates
+                                this.micSource.disconnect();
+                                // Route Mic to Main FX Chain (so we hear it + record it wet)
+                                window.audio.connectToFx(this.micSource);
+                                console.log("Microphone connected to FX chain");
+                            } catch(e) {
+                                console.warn("Error connecting mic to FX chain:", e);
+                            }
+                        }
                     }
 
+                    // 2. Synth is already connected to Master -> FX -> RecordingStream in SoundEngine.init()
+
+                    // Use the Global Recording Stream (Post-FX)
+                    // Note: This stream contains EVERYTHING (Mic + Synth + potentially other playing loops if they route to master?)
+                    // To avoid feedback loop (recording the playing loop), we must ensure 
+                    // loop playback does NOT go to 'recordingStreamDest'.
+                    // Current SoundEngine graph: 
+                    // masterGain -> fxNode -> compressor -> recordingStreamDest
+                    // loop playback -> looperGain -> destination (SAFE, skips recordingStreamDest)
+                    
+                    this.looperStream = window.audio.recordingStreamDest.stream;
+
+                    // --- RECORDER SETUP ---
                     this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
                     this.recordSamples = [];
                     this.isRecording = true;
                     this.recordStartTime = this.audioCtx.currentTime;
                     
-                    source.connect(this.processor);
+                    const mixerSource = this.audioCtx.createMediaStreamSource(this.looperStream);
+                    mixerSource.connect(this.processor);
                     
                     const silentGain = this.audioCtx.createGain();
                     silentGain.gain.value = 0; 
@@ -1374,9 +2621,174 @@
                     render();
                     this.updateLooperProgress();
                 } catch (err) {
-                    console.error("Mic Error", err);
-                    alert("Could not access microphone.");
+                    console.error("Recording Error", err);
+                    this.isRecording = false;
+                    
+                    // Cleanup on error
+                    if (this.processor) {
+                        this.processor.disconnect();
+                        this.processor = null;
+                    }
+                    
+                    // Determine error type and show appropriate message
+                    let errorMsg = "Could not start recording.";
+                    if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+                        errorMsg = "No microphone found. Please connect a microphone and try again.";
+                    } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                        errorMsg = "Microphone permission denied. Please allow microphone access in your browser settings.";
+                    } else if (err.name === 'NotReadableError') {
+                        errorMsg = "Microphone is being used by another application. Please close other apps using the microphone.";
+                    }
+                    
+                    alert(errorMsg);
+                    render();
                 }
+            }
+
+            toggleRecordSource() {
+                // Legacy method, unused now
+            }
+
+            resetMidiMappings() {
+                if (confirm("Clear all MIDI mappings (knobs and buttons)?")) {
+                    this.midiMappings = {};
+                    localStorage.removeItem('shed_midi_map');
+                    render();
+                }
+            }
+
+            handleMidiCC(cc, value) {
+                // Determine Context Prefix
+                const context = appState.view === 'mpc' ? 'mpc_' : 'looper_';
+                
+                // 1. Learning Mode
+                if (this.midiLearnTarget) {
+                    const key = context + 'cc_' + cc;
+                    this.midiMappings[key] = this.midiLearnTarget;
+                    localStorage.setItem('shed_midi_map', JSON.stringify(this.midiMappings));
+                    this.midiLearnTarget = null;
+                    render();
+                    return;
+                }
+                
+                // 2. Check for Mapped Actions (Context Aware)
+                const contextKey = context + 'cc_' + cc;
+                const legacyKey = 'cc_' + cc; // Fallback
+                const rawKey = cc; // Legacy raw
+
+                const target = this.midiMappings[contextKey] || this.midiMappings[legacyKey] || this.midiMappings[rawKey];
+                
+                if (!target) return;
+
+                // 3. Trigger Actions
+                if (['looper_rec', 'looper_undo', 'looper_clear', 'looper_stop', 'play_sequence', 'part_a', 'part_b', 'part_c'].includes(target)) {
+                     if (value > 64) this.triggerAction(target);
+                     return;
+                }
+                
+                // 4. MPC Actions
+                if (target.startsWith('mpc_')) {
+                    this.triggerMPCAction(target, value);
+                    return;
+                }
+
+                // 5. Synth/Looper Knobs
+                this.setSynthParam(target, value / 127);
+            }
+
+            handleMidiNote(note, velocity) {
+                const context = appState.view === 'mpc' ? 'mpc_' : 'looper_';
+                
+                // 1. Learning Mode
+                if (this.midiLearnTarget) {
+                    const key = context + 'note_' + note;
+                    this.midiMappings[key] = this.midiLearnTarget;
+                    localStorage.setItem('shed_midi_map', JSON.stringify(this.midiMappings));
+                    this.midiLearnTarget = null;
+                    render();
+                    return true;
+                }
+
+                // 2. Check Mapping
+                const contextKey = context + 'note_' + note;
+                const legacyKey = 'note_' + note;
+                const target = this.midiMappings[contextKey] || this.midiMappings[legacyKey];
+
+                if (target) {
+                    console.log(`MIDI Mapping Found: ${target} for Note ${note}`);
+                    if (velocity > 0) {
+                        if (target.startsWith('mpc_')) {
+                             this.triggerMPCAction(target, velocity);
+                        } else {
+                             this.triggerAction(target);
+                        }
+                    }
+                    return true;
+                }
+                return false;
+            }
+
+            triggerMPCAction(target, value) {
+                if (target === 'mpc_rec_selected') {
+                    if (value > 64 && this.mpc.selectedPad) {
+                         this.recordPad(this.mpc.selectedPad.id);
+                    }
+                    return;
+                }
+                
+                // format: mpc_pad_0
+                if (target.startsWith('mpc_pad_')) {
+                    const idx = parseInt(target.split('_').pop());
+                    if (!isNaN(idx)) {
+                        this.mpc.triggerPad(idx);
+                        this.mpc.selectPad(idx);
+                    }
+                }
+            }
+
+            triggerAction(action) {
+                console.log("Triggering Action:", action);
+                if (action === 'looper_rec') {
+                    if (this.isRecording) this.stopRecording();
+                    else this.startRecording();
+                } else if (action === 'looper_undo') {
+                    this.undoLastLayer();
+                } else if (action === 'looper_clear') {
+                    this.clearLoop();
+                } else if (action === 'looper_stop') {
+                    this.toggleLoopPlayback();
+                } else if (action === 'play_sequence') {
+                    if (this.isPlayingSequence) this.stopSongSequence();
+                    else this.playSongSequence();
+                } else if (action === 'part_a') {
+                    this.switchToSection(0);
+                } else if (action === 'part_b') {
+                    this.switchToSection(1);
+                } else if (action === 'part_c') {
+                    this.switchToSection(2);
+                }
+            }
+
+            setSynthParam(param, val) {
+                // Update param bars in Looper View
+                ['Cutoff', 'Resonance', 'Attack', 'Decay', 'Sustain', 'Release', 'Volume', 'Preset', 'Drive', 'Delay', 'Reverb'].forEach(pName => {
+                    const pKey = pName.toLowerCase();
+                    if (pKey === param) {
+                         const bar = document.getElementById(`param-bar-${pKey}`);
+                         if (bar) {
+                             bar.style.height = `${val * 100}%`;
+                         }
+                    }
+                });
+                
+                if (window.audio) {
+                    window.audio.tweakParam(param, val);
+                }
+            }
+
+            toggleMidiLearn(param) {
+                this.midiLearnTarget = this.midiLearnTarget === param ? null : param;
+                render();
             }
 
             stopRecording() {
@@ -1389,6 +2801,23 @@
                     this.monitorNode.disconnect();
                     this.monitorNode = null;
                 }
+                
+                // DON'T disconnect micSource completely - this breaks subsequent recordings
+                // The micSource should persist across recordings for the same section
+                // Only disconnect from the FX chain temporarily, it will be reconnected in startRecording
+                if (this.micSource && this.recordMic) {
+                    try {
+                        // Only disconnect from FX chain, keep micSource alive
+                        if (window.audio && window.audio.fxNode) {
+                            this.micSource.disconnect(window.audio.fxNode);
+                        }
+                    } catch(e) {
+                        // If specific disconnect fails, don't disconnect everything
+                        console.warn("Could not disconnect mic from FX chain:", e);
+                    }
+                }
+                
+                // Stop Looper/Mixer Stream (the intermediate mix)
                 if (this.looperStream) {
                     this.looperStream.getTracks().forEach(t => t.stop());
                     this.looperStream = null;
@@ -1403,6 +2832,18 @@
                 for (const chunk of this.recordSamples) {
                     data.set(chunk, offset);
                     offset += chunk.length;
+                }
+
+                // --- FIX: Apply Micro-Fades to prevent Pops/Clicks ---
+                const fadeLen = Math.floor(0.01 * this.audioCtx.sampleRate); // 10ms fade
+                if (data.length > fadeLen * 2) {
+                    for (let i = 0; i < fadeLen; i++) {
+                        const gain = i / fadeLen;
+                        // Fade In
+                        data[i] *= gain;
+                        // Fade Out
+                        data[data.length - 1 - i] *= gain;
+                    }
                 }
 
                 if (this.loopDuration === 0) {
@@ -1458,6 +2899,8 @@
             }
 
             stopPlayback() {
+                this.isPlayingSequence = false;
+                if (this.sequenceTimer) clearTimeout(this.sequenceTimer);
                 this.looperNodes.forEach(n => {
                     try { n.stop(); } catch(e) {}
                 });
@@ -1476,6 +2919,44 @@
                 }
             }
 
+            drawLooperWaveform() {
+                const canvas = document.getElementById('looper-waveform');
+                if (!canvas || this.loopBuffers.length === 0) return;
+                
+                const ctx = canvas.getContext('2d');
+                const width = canvas.width;
+                const height = canvas.height;
+                const amp = height / 2;
+                
+                ctx.clearRect(0, 0, width, height);
+                ctx.strokeStyle = '#22d3ee'; // cyan-400
+                ctx.lineWidth = 1;
+                
+                // Draw combined waveform of all buffers in current section
+                const targetLen = Math.floor(this.loopDuration * this.audioCtx.sampleRate);
+                const step = Math.ceil(targetLen / width);
+                
+                ctx.beginPath();
+                ctx.moveTo(0, amp);
+                
+                for (let i = 0; i < width; i++) {
+                    let maxVal = 0;
+                    const sampleIdx = i * step;
+                    
+                    this.loopBuffers.forEach(buf => {
+                        const data = buf.getChannelData(0);
+                        if (sampleIdx < data.length) {
+                            const v = Math.abs(data[sampleIdx]);
+                            if (v > maxVal) maxVal = v;
+                        }
+                    });
+                    
+                    ctx.lineTo(i, amp - maxVal * amp);
+                    ctx.lineTo(i, amp + maxVal * amp);
+                }
+                ctx.stroke();
+            }
+
             setLoopVolume(val) {
                 this.loopVolume = parseFloat(val);
                 if (this.looperGain) {
@@ -1489,14 +2970,33 @@
             }
 
             updateLooperProgress() {
-                if (this.loopDuration === 0 || (this.looperNodes.length === 0 && !this.isRecording)) return;
-                
                 const progressEl = document.getElementById('loop-progress-bar');
-                if (progressEl) {
+                const playheadEl = document.getElementById('looper-playhead');
+                
+                if (!progressEl) {
+                    requestAnimationFrame(() => this.updateLooperProgress());
+                    return;
+                }
+
+                if (this.isPlayingSequence && this.currentSequenceDuration > 0) {
+                     const now = this.audioCtx.currentTime;
+                     const elapsed = Math.max(0, now - this.currentSequenceStartTime);
+                     const percent = Math.min(100, (elapsed / this.currentSequenceDuration) * 100);
+                     progressEl.style.width = percent + '%';
+                     if (playheadEl) playheadEl.style.left = percent + '%';
+                     progressEl.classList.remove('bg-cyan-500');
+                     progressEl.classList.add('bg-green-500'); 
+                } else if (this.loopDuration > 0 && (this.looperNodes.length > 0 || this.isRecording)) {
                     const now = this.audioCtx.currentTime;
                     const elapsed = now - this.masterStartTime;
                     const percent = ((elapsed % this.loopDuration) / this.loopDuration) * 100;
                     progressEl.style.width = percent + '%';
+                    if (playheadEl) playheadEl.style.left = percent + '%';
+                    progressEl.classList.remove('bg-green-500');
+                    progressEl.classList.add('bg-cyan-500'); 
+                } else {
+                    progressEl.style.width = '0%';
+                    if (playheadEl) playheadEl.style.left = '0%';
                 }
                 
                 requestAnimationFrame(() => this.updateLooperProgress());
@@ -1693,9 +3193,9 @@
             }
         }
 
-        const studio = new StudioTools();
+        window.studio = new StudioTools();
 
-        const audio = new SoundEngine();
+        window.audio = new SoundEngine();
 
         // --- DATA: BACKING TRACKS ---
         const BACKING_TRACKS = [
@@ -4662,19 +6162,10 @@
                                                </div>
                                                <div class="h-8 w-px bg-stone-700 hidden md:block"></div>
                                                <div class="flex flex-col">
-                                                   <label class="text-[10px] font-bold uppercase text-stone-500 mb-1">${appState.audioEngineMode === 'high-fidelity' ? 'Classic Preset' : 'Instrument'}</label>
-                                                   ${appState.audioEngineMode === 'high-fidelity' ? `
-                                                       <select onchange="audio.currentSynthPreset = audio.presets.synth.find(p => p.id === this.value); render()" class="bg-stone-900 text-cyan-400 text-sm font-bold rounded p-1.5 border border-stone-700 outline-none focus:border-cyan-500 transition-colors">
-                                                           ${audio.presets.synth.map(p => `<option value="${p.id}" ${audio.currentSynthPreset.id === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
-                                                       </select>
-                                                   ` : `
-                                                       <select onchange="audio.setInstrument(this.value)" class="bg-stone-900 text-white text-sm font-bold rounded p-1.5 border border-stone-700 outline-none focus:border-orange-500 transition-colors">
-                                                           <option value="triangle" ${audio.instrument === 'triangle' ? 'selected' : ''}>Synth (Triangle)</option>
-                                                           <option value="sine" ${audio.instrument === 'sine' ? 'selected' : ''}>Soft (Sine)</option>
-                                                           <option value="sawtooth" ${audio.instrument === 'sawtooth' ? 'selected' : ''}>Lead (Saw)</option>
-                                                           <option value="square" ${audio.instrument === 'square' ? 'selected' : ''}>Retro (Square)</option>
-                                                       </select>
-                                                   `}
+                                                   <label class="text-[10px] font-bold uppercase text-stone-500 mb-1">Synth Preset</label>
+                                                   <select onchange="audio.currentSynthPreset = audio.presets.synth.find(p => p.id === this.value); console.log('Preset changed to:', audio.currentSynthPreset.name, audio.currentSynthPreset); render()" class="bg-stone-900 text-cyan-400 text-sm font-bold rounded p-1.5 border border-stone-700 outline-none focus:border-cyan-500 transition-colors">
+                                                       ${audio.presets.synth.map(p => `<option value="${p.id}" ${audio.currentSynthPreset.id === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                                                   </select>
                                                </div>
                                            </div>
                                        </div>
@@ -4817,6 +6308,171 @@
             `;
         }
 
+        function renderMPC() {
+            const mpc = studio.mpc;
+            const selectedPad = mpc.selectedPad;
+
+            return `
+               <div class="min-h-screen bg-stone-900 text-white flex flex-col pt-20 pb-32">
+                   <div class="max-w-6xl mx-auto w-full px-6 flex-1 flex flex-col">
+        
+                       <div class="text-center mb-8">
+                           <h2 class="text-cyan-500 text-xs font-bold uppercase tracking-[0.2em] mb-2">The Sampler</h2>
+                           <h1 class="text-4xl md:text-5xl font-serif font-black mb-4">MPC WORKFLOW</h1>
+                           <div class="flex justify-center gap-4">
+                                <button onclick="studio.togglePlay()" class="px-6 py-2 rounded-full font-bold uppercase tracking-widest transition-all ${studio.isPlaying ? 'bg-green-500 text-white shadow-lg' : 'bg-stone-800 text-stone-400'}">
+                                    ${studio.isPlaying ? Icon('stop', 'mr-2') + 'Stop' : Icon('play', 'mr-2') + 'Play'}
+                                </button>
+                                <div class="bg-stone-800 rounded-full px-4 flex items-center gap-2">
+                                    <span class="text-xs font-bold text-stone-500">BPM</span>
+                                    <input type="number" value="${audio.tempo}" onchange="audio.setTempo(this.value)" class="bg-transparent w-12 text-center font-mono font-bold outline-none">
+                                </div>
+                                <div class="bg-stone-800 rounded-full px-4 flex items-center gap-2">
+                                    <span class="text-xs font-bold text-stone-500">SWING</span>
+                                    <input type="number" min="0" max="0.5" step="0.05" value="${mpc.swing}" onchange="studio.mpc.swing = parseFloat(this.value)" class="bg-transparent w-12 text-center font-mono font-bold outline-none">
+                                </div>
+                           </div>
+                       </div>
+
+                       <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
+                           
+                           <!-- LEFT: PADS -->
+                           <div class="bg-stone-800 border border-stone-700 rounded-2xl p-6 shadow-2xl relative">
+                               <div class="absolute top-4 left-6 text-xs font-bold text-stone-500 uppercase tracking-widest flex items-center gap-2">
+                                   Pattern: <select onchange="studio.mpc.loadPattern(this.value)" class="bg-stone-900 border-none text-orange-500 font-bold outline-none ml-1 rounded p-1">
+                                       <option value="">-- Load --</option>
+                                       ${Object.entries(mpc.patternLibrary).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('')}
+                                   </select>
+                               </div>
+                               <div class="absolute top-4 right-6 text-xs font-bold text-stone-500 uppercase tracking-widest">
+                                    Kit: <select onchange="studio.mpc.loadKit(this.value)" class="bg-stone-900 border-none text-cyan-500 font-bold outline-none ml-2 rounded p-1">
+                                        ${Object.entries(mpc.kits).map(([k, v]) => `<option value="${k}" ${mpc.activeKit === k ? 'selected' : ''}>${v.name}</option>`).join('')}
+                                    </select>
+                               </div>
+
+                               <div class="grid grid-cols-4 gap-3 mt-8 aspect-square">
+                                   ${mpc.pads.map((pad, i) => {
+                                       const isLearning = studio.midiLearnTarget === 'mpc_pad_' + i;
+                                       // Check if mapped (scan keys)
+                                       const isMapped = Object.keys(studio.midiMappings).some(k => studio.midiMappings[k] === 'mpc_pad_' + i);
+                                       
+                                       return `
+                                       <div id="mpc-pad-${i}"
+                                            onmousedown="studio.mpc.triggerPad(${i}); studio.mpc.selectPad(${i});"
+                                            class="rounded-lg bg-gradient-to-br from-stone-700 to-stone-800 border-2 ${mpc.selectedPadIndex === i ? 'border-cyan-500 shadow-[0_0_15px_rgba(34,211,238,0.3)]' : 'border-stone-600'} hover:border-stone-400 cursor-pointer relative shadow-lg active:scale-95 transition-all flex flex-col items-center justify-center group select-none ${isLearning ? 'ring-4 ring-orange-500' : ''}">
+                                            
+                                            <span class="text-xl font-black ${pad.buffer ? 'text-white' : 'text-stone-500'} group-hover:text-white transition-colors">${i + 1}</span>
+                                            <span class="text-[9px] font-bold uppercase tracking-wider text-stone-400 mt-1 truncate max-w-[90%]">${pad.name}</span>
+                                            
+                                            <!-- Steps Indicator -->
+                                            <div class="absolute bottom-2 flex gap-0.5">
+                                                ${pad.steps.map((s, si) => s ? `<div class="w-1 h-1 rounded-full bg-cyan-500"></div>` : '').join('')}
+                                            </div>
+
+                                            <!-- MIDI Learn Button -->
+                                            <button onclick="event.stopPropagation(); studio.toggleMidiLearn('mpc_pad_${i}')" 
+                                                class="absolute top-1 right-1 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-stone-600 ${isLearning || isMapped ? 'opacity-100 text-orange-500' : 'text-stone-500'}">
+                                                ${Icon('target', 'text-[10px]')}
+                                            </button>
+                                       </div>
+                                   `}).join('')}
+                               </div>
+                           </div>
+
+                           <!-- RIGHT: EDITOR & SEQUENCER -->
+                           <div class="flex flex-col gap-6">
+                               
+                                                                  <!-- Waveform / Sample Editor -->
+                                                                  <div class="bg-stone-900 border border-stone-700 rounded-2xl p-6 flex-1 flex flex-col">
+                                                                      <div class="flex justify-between items-center mb-6">
+                                                                          <div>
+                                                                              <h3 class="text-xs font-bold text-stone-500 uppercase tracking-widest">Selected Pad</h3>
+                                                                              <h2 class="text-2xl font-black text-white">${selectedPad.name}</h2>
+                                                                          </div>
+                                                                          <div class="flex gap-2 items-center">
+                                                                              <label class="bg-stone-800 hover:bg-stone-700 text-stone-300 px-4 py-2 rounded-full font-bold text-xs uppercase cursor-pointer transition-colors border border-stone-600">
+                                                                                  ${Icon('upload', 'mr-1')} Load Sample
+                                                                                  <input type="file" accept="audio/*" class="hidden" onchange="studio.mpc.loadSampleFromFile(${selectedPad.id}, this.files[0])">
+                                                                              </label>
+                                                                              
+                                                                              <div class="relative group">
+                                                                                  <button onclick="studio.recordPad(${selectedPad.id})" 
+                                                                                      class="px-4 py-2 rounded-full font-bold text-xs uppercase transition-colors border shadow-lg active:scale-95 
+                                                                                      ${selectedPad.isRecording ? 'bg-red-600 text-white animate-pulse border-red-500' : 'bg-red-900/30 hover:bg-red-900/50 text-red-400 border-red-900'} 
+                                                                                      ${studio.midiLearnTarget === 'mpc_rec_selected' ? 'ring-4 ring-orange-500' : ''}">
+                                                                                      ${Icon('microphone', 'mr-1')} ${selectedPad.isRecording ? 'Stop Rec' : 'Rec'}
+                                                                                  </button>
+                                                                                  <button onclick="studio.toggleMidiLearn('mpc_rec_selected')" 
+                                                                                      class="absolute -top-2 -right-2 bg-stone-800 text-stone-400 hover:text-orange-500 p-1.5 rounded-full shadow-md border border-stone-600 ${studio.midiLearnTarget === 'mpc_rec_selected' ? 'text-orange-500 border-orange-500' : ''}" title="MIDI Map">
+                                                                                      ${Icon('target', 'text-[10px]')}
+                                                                                  </button>
+                                                                              </div>
+                                                                          </div>
+                                                                      </div>
+                               
+                                                                      <!-- Actual Waveform Canvas -->
+                                                                      <div class="w-full h-32 bg-stone-950 rounded border border-stone-800 mb-2 relative overflow-hidden flex items-center">
+                                                                          <canvas id="mpc-waveform" width="600" height="128" class="w-full h-full"></canvas>
+                                                                          ${!selectedPad.buffer ? `<div class="absolute inset-0 flex items-center justify-center text-stone-600 text-xs font-mono">NO SAMPLE DATA (SYNTH MODE)</div>` : ''}
+                                                                      </div>
+                               
+                                                                      <!-- Trim Sliders -->
+                                                                      <div class="flex gap-4 mb-6">
+                                                                          <div class="flex-1">
+                                                                              <label class="text-[9px] font-bold text-stone-500 uppercase mb-1 block">Start Trim</label>
+                                                                              <input type="range" min="0" max="1" step="0.001" value="${selectedPad.params.start}" 
+                                                                                  oninput="studio.mpc.selectedPad.params.start = parseFloat(this.value); studio.mpc.drawWaveform(document.getElementById('mpc-waveform'), studio.mpc.selectedPad.buffer, studio.mpc.selectedPad.params)" 
+                                                                                  class="w-full accent-orange-600 bg-stone-800 h-1 appearance-none rounded">
+                                                                          </div>
+                                                                          <div class="flex-1">
+                                                                              <label class="text-[9px] font-bold text-stone-500 uppercase mb-1 block">End Trim</label>
+                                                                              <input type="range" min="0" max="1" step="0.001" value="${selectedPad.params.end}" 
+                                                                                  oninput="studio.mpc.selectedPad.params.end = parseFloat(this.value); studio.mpc.drawWaveform(document.getElementById('mpc-waveform'), studio.mpc.selectedPad.buffer, studio.mpc.selectedPad.params)" 
+                                                                                  class="w-full accent-orange-600 bg-stone-800 h-1 appearance-none rounded">
+                                                                          </div>
+                                                                      </div>
+                               
+                                                                      <!-- Params -->
+                                                                      <div class="grid grid-cols-3 gap-4">
+                                                                          <div>
+                                                                              <label class="text-[10px] font-bold text-stone-500 uppercase mb-1 block">Volume</label>
+                                                                              <input type="range" min="0" max="1" step="0.01" value="${selectedPad.params.vol}" oninput="studio.mpc.selectedPad.params.vol = parseFloat(this.value)" class="w-full accent-cyan-500 bg-stone-800 h-1 appearance-none rounded">
+                                                                          </div>
+                                                                          <div>
+                                                                              <label class="text-[10px] font-bold text-stone-500 uppercase mb-1 block">Pitch</label>
+                                                                              <input type="range" min="-12" max="12" step="1" value="${selectedPad.params.pitch}" oninput="studio.mpc.selectedPad.params.pitch = parseFloat(this.value)" class="w-full accent-cyan-500 bg-stone-800 h-1 appearance-none rounded">
+                                                                          </div>
+                                                                          <div>
+                                                                              <label class="text-[10px] font-bold text-stone-500 uppercase mb-1 block">Pan</label>
+                                                                              <input type="range" min="-1" max="1" step="0.1" value="${selectedPad.params.pan}" oninput="studio.mpc.selectedPad.params.pan = parseFloat(this.value)" class="w-full accent-cyan-500 bg-stone-800 h-1 appearance-none rounded">
+                                                                          </div>
+                                                                      </div>
+                                                                  </div>
+                               <!-- Step Sequencer (For Selected Pad) -->
+                               <div class="bg-stone-800 border border-stone-700 rounded-2xl p-6">
+                                   <div class="flex justify-between items-center mb-4">
+                                       <h3 class="text-xs font-bold text-stone-500 uppercase tracking-widest">Sequencer: ${selectedPad.name}</h3>
+                                       <button onclick="studio.mpc.clearPattern()" class="text-[10px] font-bold text-red-400 hover:text-red-300 uppercase">Clear All</button>
+                                   </div>
+                                   
+                                   <div class="grid grid-cols-8 gap-2">
+                                       ${selectedPad.steps.map((step, i) => `
+                                           <button 
+                                                onclick="studio.mpc.toggleStep(${i})"
+                                                class="h-10 rounded border-b-4 transition-all active:scale-95 ${step ? 'bg-cyan-500 border-cyan-700 shadow-[0_0_10px_rgba(34,211,238,0.5)]' : 'bg-stone-700 border-stone-900 text-stone-500 hover:bg-stone-600'} ${studio.currentStep === i ? 'ring-2 ring-white' : ''}">
+                                                ${i % 4 === 0 ? `<span class="text-[9px] font-black opacity-50">${(i/4)+1}</span>` : ''}
+                                           </button>
+                                       `).join('')}
+                                   </div>
+                               </div>
+
+                           </div>
+                       </div>
+                   </div>
+               </div>
+            `;
+        }
+
         // --- PWA FOUNDATION ---
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -4841,10 +6497,10 @@
             theme_color: "#ea580c"
         };
         const manifestStr = encodeURIComponent(JSON.stringify(manifest));
-        const link = document.createElement('link');
-        link.rel = 'manifest';
-        link.href = 'data:application/json,' + manifestStr;
-        document.head.appendChild(link);
+        const manifestLink = document.createElement('link');
+        manifestLink.rel = 'manifest';
+        manifestLink.href = 'data:application/json,' + manifestStr;
+        document.head.appendChild(manifestLink);
 
         // --- PRACTICE TIMER LOGIC ---
         function startRoutine() {
@@ -4945,6 +6601,10 @@
                         <button onclick="setView('jam')" class="flex items-center gap-3 text-lg font-bold text-stone-800 dark:text-stone-200 hover:text-orange-600 w-full text-left">
                             ${Icon('music-notes', 'text-xl')}
                             <span>Jam Station</span>
+                        </button>
+                        <button onclick="setView('mpc')" class="flex items-center gap-3 text-lg font-bold text-stone-800 dark:text-stone-200 hover:text-cyan-500 w-full text-left">
+                            ${Icon('squares-four', 'text-xl')}
+                            <span>MPC Sampler</span>
                         </button>
                         <button onclick="setView('challenge')" class="flex items-center gap-3 text-lg font-bold text-stone-800 dark:text-stone-200 hover:text-orange-600 w-full text-left">
                             ${Icon('lightning', 'text-xl')}
@@ -5089,12 +6749,12 @@
             const isRec = studio.isRecording;
             const loopCount = studio.loopBuffers.length;
             const hasLoop = loopCount > 0;
+            const presets = audio.presets.synth;
 
             return `
                 <div class="h-full flex flex-col items-center justify-center bg-stone-800 rounded-xl border border-stone-700 p-8 shadow-inner relative overflow-hidden">
                     <div class="absolute top-4 right-4 opacity-10 text-white">${Icon('repeat', 'text-6xl')}</div>
                     
-                    <!-- Progress Bar (Top) -->
                     ${hasLoop || isRec ? `
                         <div class="absolute top-0 left-0 right-0 h-1.5 bg-stone-900">
                             <div id="loop-progress-bar" class="h-full bg-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.8)] transition-all duration-75" style="width: 0%"></div>
@@ -5102,7 +6762,6 @@
                     ` : ''}
 
                     <div class="flex items-center justify-center gap-8 mb-6 mt-4">
-                         <!-- Tape Reels Animation -->
                          <div class="w-24 h-24 md:w-32 md:h-32 rounded-full border-8 border-stone-700 bg-stone-900 flex items-center justify-center relative ${isRec || (hasLoop) ? 'animate-spin' : ''}" style="animation-duration: 3s;">
                             <div class="w-10 h-10 rounded-full bg-stone-800 border-2 border-stone-600"></div>
                             <div class="absolute w-full h-1 bg-transparent border-t-2 border-stone-600 top-1/2 -translate-y-1/2"></div>
@@ -5117,51 +6776,264 @@
                         ${hasLoop ? `
                             <div class="text-cyan-400 font-bold uppercase tracking-widest text-xs mb-1">${loopCount} Layer${loopCount > 1 ? 's' : ''} Active</div>
                             <div class="text-stone-500 text-[10px] font-mono">${studio.loopDuration.toFixed(2)}s LOOP</div>
+                            
+                            <!-- Loop Waveform Preview -->
+                            <div class="mt-4 w-full h-12 bg-stone-900 rounded overflow-hidden border border-stone-700 relative">
+                                <canvas id="looper-waveform" width="400" height="48" class="w-full h-full opacity-50"></canvas>
+                                <div id="looper-playhead" class="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_5px_white] z-10" style="left: 0%"></div>
+                            </div>
                         ` : `
                             <div class="text-stone-500 font-bold uppercase tracking-widest text-xs">Waiting for first take...</div>
                         `}
                     </div>
 
+                    <!-- Song Sections (Multiloop) -->
+                    <div class="flex justify-center gap-2 mb-6">
+                        ${studio.sections.map((sec, i) => `
+                            <div class="relative group">
+                                <button onclick="studio.switchToSection(${i})" 
+                                    class="px-4 py-2 rounded-lg font-bold text-xs uppercase border transition-all ${studio.activeSectionIndex === i ? 'bg-cyan-600 border-cyan-500 text-white shadow-lg' : 'bg-stone-900 border-stone-700 text-stone-500 hover:text-white'}">
+                                    ${sec.name}
+                                    ${sec.buffers.length > 0 ? `<span class="ml-1 w-2 h-2 rounded-full bg-green-500 inline-block"></span>` : ''}
+                                </button>
+                                <button onclick="studio.toggleMidiLearn('part_${sec.id.toLowerCase()}')" class="absolute -top-2 -right-2 bg-stone-800 text-stone-400 hover:text-orange-500 p-1 rounded-full shadow-md border border-stone-600 ${studio.midiLearnTarget === 'part_' + sec.id.toLowerCase() ? 'text-orange-500 border-orange-500' : ''} opacity-0 group-hover:opacity-100 transition-opacity" title="MIDI Map">
+                                    ${Icon('target', 'text-[10px]')}
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <!-- Song Sequence Queue -->
+                    <div class="flex flex-col items-center mb-6 w-full">
+                        <div class="flex flex-wrap justify-center items-center gap-2 bg-stone-900 p-3 rounded-lg border border-stone-800 w-full max-w-lg min-h-[50px]">
+                            <span class="text-[10px] font-bold text-stone-500 uppercase mr-2">Sequence:</span>
+                            ${studio.songSequence.length === 0 ? `<span class="text-[10px] text-stone-600 italic">Empty</span>` : ''}
+                            ${studio.songSequence.map((sid, i) => {
+                                const isActive = studio.isPlayingSequence && studio.activeSequenceIndex === i;
+                                return `
+                                <div class="relative group px-3 py-1.5 rounded text-xs font-bold border flex items-center gap-2 transition-all ${isActive ? 'bg-green-900/50 text-green-400 border-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)] scale-105' : 'bg-stone-800 text-cyan-400 border-stone-700'}">
+                                    Part ${sid}
+                                    <button onclick="studio.songSequence.splice(${i}, 1); render()" class="hover:text-red-500 opacity-50 hover:opacity-100">×</button>
+                                    ${isActive ? '<div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-green-400 rounded-full"></div>' : ''}
+                                </div>
+                            `}).join('')}
+                            <div class="h-6 w-px bg-stone-700 mx-2"></div>
+                            <button onclick="studio.songSequence.push(studio.sections[studio.activeSectionIndex].id); render()" class="text-green-500 hover:text-white font-bold text-xs px-3 py-1 border border-dashed border-green-900 hover:border-green-500 rounded">+ Add Current</button>
+                        </div>
+                        
+                        ${studio.songSequence.length > 0 ? `
+                            <div class="relative group mt-4 w-full max-w-xs">
+                                <button onclick="studio.triggerAction('play_sequence')" class="w-full py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg font-bold shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 ${studio.isPlayingSequence ? 'animate-pulse ring-2 ring-green-400' : ''} ${studio.midiLearnTarget === 'play_sequence' ? 'ring-4 ring-orange-500' : ''}">
+                                    ${Icon(studio.isPlayingSequence ? 'stop' : 'play', 'text-xl')} 
+                                    ${studio.isPlayingSequence ? 'STOP SEQUENCE' : 'PLAY FULL SEQUENCE'}
+                                </button>
+                                <button onclick="studio.toggleMidiLearn('play_sequence')" class="absolute -top-2 -right-2 bg-stone-800 text-stone-400 hover:text-orange-500 p-1.5 rounded-full shadow-md border border-stone-600 ${studio.midiLearnTarget === 'play_sequence' ? 'text-orange-500 border-orange-500' : ''}" title="MIDI Map">
+                                    ${Icon('target', 'text-sm')}
+                                </button>
+                            </div>
+                        ` : ''}
+                    </div>
+
                     <!-- Main Controls -->
-                    <div class="flex flex-wrap justify-center gap-4 mb-8">
-                        ${!isRec ? `
-                            <button onclick="studio.startRecording()" class="bg-red-600 hover:bg-red-500 text-white px-8 py-4 rounded-full flex items-center gap-2 font-bold shadow-lg active:scale-95 transition-all">
-                                ${Icon(hasLoop ? 'plus' : 'record', 'text-xl')} ${hasLoop ? 'OVERDUB' : 'START LOOP'}
+                    <div class="flex flex-wrap justify-center gap-4 mb-6">
+                        <div class="relative group">
+                            <!-- Rec Button -->
+                            ${!isRec ? `
+                                <button onclick="studio.startRecording()" class="bg-red-600 hover:bg-red-500 text-white px-8 py-4 rounded-full flex items-center gap-2 font-bold shadow-lg active:scale-95 transition-all ${studio.midiLearnTarget === 'looper_rec' ? 'ring-4 ring-orange-500 animate-pulse' : ''}">
+                                    ${Icon(hasLoop ? 'plus' : 'record', 'text-xl')} ${hasLoop ? 'OVERDUB' : 'START LOOP'}
+                                </button>
+                            ` : `
+                                <button onclick="studio.stopRecording()" class="bg-stone-100 text-stone-900 px-8 py-4 rounded-full flex items-center gap-2 font-bold animate-pulse shadow-lg ${studio.midiLearnTarget === 'looper_rec' ? 'ring-4 ring-orange-500' : ''}">
+                                    ${Icon('stop', 'text-xl')} FINISH
+                                </button>
+                            `}
+                            <!-- Rec Learn Toggle -->
+                            <button onclick="studio.toggleMidiLearn('looper_rec')" class="absolute -top-2 -right-2 bg-stone-800 text-stone-400 hover:text-orange-500 p-1.5 rounded-full shadow-md border border-stone-600 ${studio.midiLearnTarget === 'looper_rec' ? 'text-orange-500 border-orange-500' : ''}" title="MIDI Map">
+                                ${Icon('target', 'text-sm')}
                             </button>
-                        ` : `
-                            <button onclick="studio.stopRecording()" class="bg-stone-100 text-stone-900 px-8 py-4 rounded-full flex items-center gap-2 font-bold animate-pulse shadow-lg">
-                                ${Icon('stop', 'text-xl')} FINISH
-                            </button>
-                        `}
+                        </div>
                         
                         <div class="flex gap-2">
-                            <button onclick="studio.undoLastLayer()" ${!hasLoop ? 'disabled' : ''} class="bg-stone-700 hover:bg-stone-600 text-white p-4 rounded-full font-bold disabled:opacity-30 transition-colors" title="Undo Last Layer">
-                                ${Icon('arrow-u-up-left', 'text-xl')}
-                            </button>
-                            <button onclick="studio.clearLoop()" ${!hasLoop ? 'disabled' : ''} class="bg-stone-900 border border-stone-600 text-stone-300 p-4 rounded-full font-bold disabled:opacity-30 hover:bg-red-900/30 hover:text-red-400 hover:border-red-900 transition-all" title="Clear All">
-                                ${Icon('trash', 'text-xl')}
-                            </button>
+                            <!-- Play/Stop Button -->
+                            <div class="relative group">
+                                <button onclick="studio.toggleLoopPlayback()" ${!hasLoop ? 'disabled' : ''} class="bg-stone-700 hover:bg-stone-600 text-white p-4 rounded-full font-bold disabled:opacity-30 transition-all ${studio.midiLearnTarget === 'looper_stop' ? 'ring-4 ring-orange-500 animate-pulse' : ''}" title="Play/Stop Loop">
+                                    ${Icon(studio.looperNodes.length > 0 || studio.isPlayingSequence ? 'stop' : 'play', 'text-xl')}
+                                </button>
+                                <button onclick="studio.toggleMidiLearn('looper_stop')" class="absolute -top-2 -right-2 bg-stone-800 text-stone-400 hover:text-orange-500 p-1.5 rounded-full shadow-md border border-stone-600 ${studio.midiLearnTarget === 'looper_stop' ? 'text-orange-500 border-orange-500' : ''}" title="MIDI Map">
+                                    ${Icon('target', 'text-sm')}
+                                </button>
+                            </div>
+
+                            <!-- Undo Button -->
+                            <div class="relative group">
+                                <button onclick="studio.undoLastLayer()" ${!hasLoop ? 'disabled' : ''} class="bg-stone-700 hover:bg-stone-600 text-white p-4 rounded-full font-bold disabled:opacity-30 transition-colors ${studio.midiLearnTarget === 'looper_undo' ? 'ring-4 ring-orange-500 animate-pulse' : ''}" title="Undo Last Layer">
+                                    ${Icon('arrow-u-up-left', 'text-xl')}
+                                </button>
+                                <button onclick="studio.toggleMidiLearn('looper_undo')" class="absolute -top-2 -right-2 bg-stone-800 text-stone-400 hover:text-orange-500 p-1.5 rounded-full shadow-md border border-stone-600 ${studio.midiLearnTarget === 'looper_undo' ? 'text-orange-500 border-orange-500' : ''}" title="MIDI Map">
+                                    ${Icon('target', 'text-sm')}
+                                </button>
+                            </div>
+                            
+                            <!-- Delete Button -->
+                            <div class="relative group">
+                                <button onclick="studio.clearLoop()" ${!hasLoop ? 'disabled' : ''} class="bg-stone-900 border border-stone-600 text-stone-300 p-4 rounded-full font-bold disabled:opacity-30 hover:bg-red-900/30 hover:text-red-400 hover:border-red-900 transition-all ${studio.midiLearnTarget === 'looper_clear' ? 'ring-4 ring-orange-500 animate-pulse' : ''}" title="Clear All">
+                                    ${Icon('trash', 'text-xl')}
+                                </button>
+                                <button onclick="studio.toggleMidiLearn('looper_clear')" class="absolute -top-2 -right-2 bg-stone-800 text-stone-400 hover:text-orange-500 p-1.5 rounded-full shadow-md border border-stone-600 ${studio.midiLearnTarget === 'looper_clear' ? 'text-orange-500 border-orange-500' : ''}" title="MIDI Map">
+                                    ${Icon('target', 'text-sm')}
+                                </button>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Bottom Mixer & Settings -->
-                    <div class="w-full max-w-sm grid grid-cols-2 gap-6 pt-6 border-t border-stone-700/50">
-                        <div class="flex flex-col gap-2">
-                             <div class="flex justify-between items-center">
-                                <label class="text-[10px] font-bold uppercase text-stone-500">Loop Vol</label>
-                                <span class="text-[10px] font-mono text-cyan-400">${Math.round(studio.loopVolume * 100)}%</span>
-                             </div>
-                             <input type="range" min="0" max="1" step="0.01" value="${studio.loopVolume}" 
-                                oninput="studio.setLoopVolume(this.value); this.previousElementSibling.lastElementChild.innerText = Math.round(this.value * 100) + '%'" 
-                                class="w-full accent-cyan-500 h-1 bg-stone-900 rounded-lg appearance-none cursor-pointer"/>
+                    <!-- Input Mixer & Presets -->
+                    <div class="w-full max-w-md bg-stone-900/50 rounded-lg p-4 border border-stone-700/50">
+                        <div class="flex justify-between items-center mb-3">
+                            <span class="text-[10px] font-bold uppercase text-stone-500">Recording Sources</span>
+                            <div class="flex items-center gap-2">
+                                <button onclick="studio.resetMidiMappings()" class="text-[9px] font-bold text-red-500 hover:text-red-400 px-2 py-0.5 rounded border border-red-900/30 transition-colors mr-2">RESET MIDI</button>
+                                <div id="midi-activity" class="w-3 h-3 rounded-full bg-stone-700 transition-colors duration-75" title="MIDI Activity"></div>
+                                ${studio.midi && studio.midi.isEnabled ? 
+                                    `<span class="text-[9px] font-mono text-green-500">MIDI READY</span>` : 
+                                    `<button onclick="studio.midi.init().then(() => render())" class="text-[9px] font-bold bg-stone-700 hover:bg-stone-600 px-2 py-0.5 rounded text-white border border-stone-500">CONNECT MIDI</button>`
+                                }
+                            </div>
                         </div>
-                        <div class="flex flex-col gap-2">
-                             <label class="text-[10px] font-bold uppercase text-stone-500">Monitor</label>
-                             <button onclick="studio.toggleMonitoring()" class="flex items-center justify-between px-3 py-1.5 rounded bg-stone-900 border border-stone-700 text-[10px] font-bold uppercase transition-all ${studio.isMonitoring ? 'text-green-400 border-green-900 bg-green-900/10' : 'text-stone-500'}">
-                                <span>Input ${studio.isMonitoring ? 'On' : 'Off'}</span>
-                                <div class="w-2 h-2 rounded-full ${studio.isMonitoring ? 'bg-green-500 animate-pulse' : 'bg-stone-700'}"></div>
-                             </button>
+                        
+                        <div class="flex gap-4 mb-4">
+                            <label class="flex items-center gap-2 cursor-pointer select-none bg-stone-800 px-3 py-2 rounded border border-stone-700 hover:border-stone-500 transition-all ${studio.recordMic ? 'border-cyan-700 bg-cyan-900/10' : ''}">
+                                <input type="checkbox" class="hidden" ${studio.recordMic ? 'checked' : ''} onchange="studio.toggleMicrophone(this.checked)">
+                                <span class="w-3 h-3 rounded-full ${studio.recordMic ? 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]' : 'bg-stone-600'}"></span>
+                                <span class="text-xs font-bold text-stone-300">Microphone</span>
+                            </label>
+                            
+                            <label class="flex items-center gap-2 cursor-pointer select-none bg-stone-800 px-3 py-2 rounded border border-stone-700 hover:border-stone-500 transition-all ${studio.recordSynth ? 'border-orange-700 bg-orange-900/10' : ''}">
+                                <input type="checkbox" class="hidden" ${studio.recordSynth ? 'checked' : ''} onchange="studio.recordSynth = this.checked; render()">
+                                <span class="w-3 h-3 rounded-full ${studio.recordSynth ? 'bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.6)]' : 'bg-stone-600'}"></span>
+                                <span class="text-xs font-bold text-stone-300">Synth / MIDI</span>
+                            </label>
                         </div>
+
+                        <div class="flex gap-2">
+                            <div class="flex-1">
+                                <label class="text-[10px] font-bold uppercase text-stone-500 mb-1 block">Synth Preset</label>
+                                <select onchange="const p = audio.presets.synth.find(x => x.id === this.value); if(p) { audio.currentSynthPreset = p; render(); }" 
+                                        class="w-full bg-stone-800 text-orange-400 font-bold text-xs rounded p-2 border border-stone-600 focus:outline-none focus:border-orange-500">
+                                    ${presets.map(p => `<option value="${p.id}" ${audio.currentSynthPreset.id === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="w-1/3">
+                                <label class="text-[10px] font-bold uppercase text-stone-500 mb-1 block">Monitor Mic</label>
+                                <button onclick="studio.toggleMonitoring()" class="w-full text-xs font-bold py-2 rounded border transition-all ${studio.isMonitoring ? 'bg-green-900/30 text-green-400 border-green-700' : 'bg-stone-800 text-stone-500 border-stone-700'}">
+                                    ${studio.isMonitoring ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Synth Tweaks & MIDI Learn -->
+                    <div class="mt-4 pt-4 border-t border-stone-700/50 w-full max-w-sm">
+                        <div class="flex justify-between items-center mb-3">
+                            <span class="text-[10px] font-bold uppercase text-stone-500">Synth & FX Parameters</span>
+                            <div class="text-[9px] font-bold text-stone-600 ${studio.midiLearnTarget ? 'text-orange-500 animate-pulse' : ''}">
+                                ${studio.midiLearnTarget ? 'MOV KNOB TO MAP' : 'CLICK BAR TO LEARN'}
+                            </div>
+                        </div>
+                        
+                        <!-- Row 1: Tone & Preset -->
+                        <div class="grid grid-cols-4 gap-2 mb-2">
+                             ${['Cutoff', 'Resonance', 'Volume', 'Preset'].map(param => {
+                                const pKey = param.toLowerCase();
+                                const isLearning = studio.midiLearnTarget === pKey;
+                                const isMapped = Object.values(studio.midiMappings).includes(pKey);
+                                
+                                let pct = 0;
+                                const p = audio.currentSynthPreset;
+                                if (p) {
+                                    if (pKey === 'cutoff') pct = Math.min(100, Math.max(0, (p.cutoff / 10000) * 100));
+                                    else if (pKey === 'resonance') pct = p.res * 100;
+                                    else if (pKey === 'volume') pct = ((p.vol !== undefined ? p.vol : 1.0) / 2.0) * 100;
+                                    else if (pKey === 'preset') {
+                                         // Show index as percentage of total presets
+                                         const idx = audio.presets.synth.indexOf(p);
+                                         pct = (idx / (audio.presets.synth.length - 1)) * 100;
+                                    }
+                                }
+
+                                return `
+                                    <div class="flex flex-col gap-1 cursor-pointer group" onclick="studio.toggleMidiLearn('${pKey}')">
+                                        <div class="flex justify-between items-center">
+                                            <label class="text-[8px] font-bold uppercase truncate ${isLearning ? 'text-orange-500' : (isMapped ? 'text-cyan-500' : 'text-stone-500')}">${param}</label>
+                                            ${isMapped ? `<div class="w-1 h-1 rounded-full bg-cyan-500"></div>` : ''}
+                                        </div>
+                                        <div class="h-10 bg-stone-900 rounded relative overflow-hidden ${isLearning ? 'ring-1 ring-orange-500' : ''}">
+                                            <div id="param-bar-${pKey}" class="absolute bottom-0 left-0 right-0 ${isLearning ? 'bg-orange-500' : (isMapped ? 'bg-cyan-600' : 'bg-stone-600 group-hover:bg-stone-500')}" style="height: ${pct}%; transition: height 0.05s ease-out;"></div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+
+                        <!-- Row 2: Envelope (ADSR) -->
+                        <div class="grid grid-cols-4 gap-2 mb-2">
+                             ${['Attack', 'Decay', 'Sustain', 'Release'].map(param => {
+                                const pKey = param.toLowerCase();
+                                const isLearning = studio.midiLearnTarget === pKey;
+                                const isMapped = Object.values(studio.midiMappings).includes(pKey);
+                                
+                                let pct = 0;
+                                const p = audio.currentSynthPreset;
+                                if (p) {
+                                    if (pKey === 'attack') pct = (p.attack / 2.0) * 100;
+                                    else if (pKey === 'decay') pct = (p.decay / 2.0) * 100;
+                                    else if (pKey === 'sustain') pct = p.sustain * 100;
+                                    else if (pKey === 'release') pct = (p.release / 5.0) * 100;
+                                }
+
+                                return `
+                                    <div class="flex flex-col gap-1 cursor-pointer group" onclick="studio.toggleMidiLearn('${pKey}')">
+                                        <div class="flex justify-between items-center">
+                                            <label class="text-[8px] font-bold uppercase truncate ${isLearning ? 'text-orange-500' : (isMapped ? 'text-cyan-500' : 'text-stone-500')}">${param}</label>
+                                            ${isMapped ? `<div class="w-1 h-1 rounded-full bg-cyan-500"></div>` : ''}
+                                        </div>
+                                        <div class="h-10 bg-stone-900 rounded relative overflow-hidden ${isLearning ? 'ring-1 ring-orange-500' : ''}">
+                                            <div id="param-bar-${pKey}" class="absolute bottom-0 left-0 right-0 ${isLearning ? 'bg-orange-500' : (isMapped ? 'bg-cyan-600' : 'bg-stone-600 group-hover:bg-stone-500')}" style="height: ${pct}%; transition: height 0.05s ease-out;"></div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                        
+                        <!-- Row 3: Effects -->
+                        <div class="grid grid-cols-3 gap-2">
+                             ${['Drive', 'Delay', 'Reverb'].map(param => {
+                                const pKey = param.toLowerCase();
+                                const isLearning = studio.midiLearnTarget === pKey;
+                                const isMapped = Object.values(studio.midiMappings).includes(pKey);
+                                
+                                let pct = 0;
+                                // FX params are not in preset struct usually, check audio engine
+                                if (audio.fxNode) {
+                                     // We can't easily read back from AudioParam without keeping state.
+                                     // Let's assume defaults or last set value if we tracked it.
+                                     // For now, visual feedback only works if we update it.
+                                     // Default to 0?
+                                }
+
+                                return `
+                                    <div class="flex flex-col gap-1 cursor-pointer group" onclick="studio.toggleMidiLearn('${pKey}')">
+                                        <div class="flex justify-between items-center">
+                                            <label class="text-[8px] font-bold uppercase truncate ${isLearning ? 'text-orange-500' : (isMapped ? 'text-cyan-500' : 'text-stone-500')}">${param}</label>
+                                            ${isMapped ? `<div class="w-1 h-1 rounded-full bg-cyan-500"></div>` : ''}
+                                        </div>
+                                        <div class="h-10 bg-stone-900 rounded relative overflow-hidden ${isLearning ? 'ring-1 ring-orange-500' : ''}">
+                                            <div id="param-bar-${pKey}" class="absolute bottom-0 left-0 right-0 ${isLearning ? 'bg-orange-500' : (isMapped ? 'bg-cyan-600' : 'bg-stone-600 group-hover:bg-stone-500')}" style="height: ${pct}%; transition: height 0.05s ease-out;"></div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+
                     </div>
                 </div>
             `;
@@ -5677,21 +7549,12 @@
                                                         ${NOTES.map(n => `<option value="${n}" ${studio.bassNote === n ? 'selected' : ''}>${n}</option>`).join('')}
                                                     </select>
                                                 </div>
-                                                <!-- Waveform -->
+                                                <!-- Bass Preset -->
                                                 <div class="flex flex-col">
-                                                    <label class="text-[10px] font-bold uppercase text-stone-500 mb-1">${appState.audioEngineMode === 'high-fidelity' ? 'Classic Bass' : 'Wave'}</label>
-                                                    ${appState.audioEngineMode === 'high-fidelity' ? `
-                                                        <select onchange="audio.currentBassPreset = audio.presets.bass.find(p => p.id === this.value); render()" class="bg-stone-800 text-cyan-400 font-bold rounded p-1 border border-stone-700 text-sm">
-                                                            ${audio.presets.bass.map(p => `<option value="${p.id}" ${audio.currentBassPreset.id === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
-                                                        </select>
-                                                    ` : `
-                                                        <select onchange="studio.bassWaveform = this.value" class="bg-stone-800 text-cyan-400 font-bold rounded p-1 border border-stone-700 text-sm">
-                                                            <option value="sawtooth" ${studio.bassWaveform === 'sawtooth' ? 'selected' : ''}>Saw</option>
-                                                            <option value="square" ${studio.bassWaveform === 'square' ? 'selected' : ''}>Square</option>
-                                                            <option value="triangle" ${studio.bassWaveform === 'triangle' ? 'selected' : ''}>Triangle</option>
-                                                            <option value="sine" ${studio.bassWaveform === 'sine' ? 'selected' : ''}>Sine</option>
-                                                        </select>
-                                                    `}
+                                                    <label class="text-[10px] font-bold uppercase text-stone-500 mb-1">Bass Preset</label>
+                                                    <select onchange="audio.currentBassPreset = audio.presets.bass.find(p => p.id === this.value); console.log('Bass preset:', audio.currentBassPreset.name); render()" class="bg-stone-800 text-cyan-400 font-bold rounded p-1 border border-stone-700 text-sm">
+                                                        ${audio.presets.bass.map(p => `<option value="${p.id}" ${audio.currentBassPreset.id === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                                                    </select>
                                                 </div>
                                                 <!-- Bassline Pattern -->
                                                 <div class="flex flex-col">
@@ -5763,6 +7626,40 @@
                                             </div>
                                         </div>
 
+                                        <!-- DRUM KIT SELECTOR -->
+                                        <div class="bg-gradient-to-r from-stone-900 to-stone-800 rounded-xl p-4 border border-amber-500/30 mb-4">
+                                            <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                                                <span class="w-3 h-3 rounded-full bg-gradient-to-r from-orange-500 via-red-500 to-yellow-500"></span>
+                                                Drum Kit Preset
+                                            </h3>
+                                            <select id="drumKitSelect" onchange="
+                                                studio.setDrumKit(this.value);
+                                                const kit = studio.drumKits[this.value];
+                                                // Update all sliders to reflect kit values
+                                                document.querySelector('#kickPitchSlider').value = kit.kick.pitch;
+                                                document.querySelector('#kickPitchSlider').previousElementSibling.querySelector('span').innerText = kit.kick.pitch + 'Hz';
+                                                document.querySelector('#kickDecaySlider').value = kit.kick.decay;
+                                                document.querySelector('#kickDecaySlider').previousElementSibling.querySelector('span').innerText = (kit.kick.decay * 1000).toFixed(0) + 'ms';
+                                                document.querySelector('#snarePitchSlider').value = kit.snare.pitch;
+                                                document.querySelector('#snarePitchSlider').previousElementSibling.querySelector('span').innerText = kit.snare.pitch + 'Hz';
+                                                document.querySelector('#snareDecaySlider').value = kit.snare.decay;
+                                                document.querySelector('#snareDecaySlider').previousElementSibling.querySelector('span').innerText = (kit.snare.decay * 1000).toFixed(0) + 'ms';
+                                                document.querySelector('#snareNoiseSlider').value = kit.snare.noise;
+                                                document.querySelector('#snareNoiseSlider').previousElementSibling.querySelector('span').innerText = Math.round(kit.snare.noise * 100) + '%';
+                                                document.querySelector('#hihatPitchSlider').value = kit.hihat.pitch;
+                                                document.querySelector('#hihatPitchSlider').previousElementSibling.querySelector('span').innerText = kit.hihat.pitch + 'Hz';
+                                                document.querySelector('#hihatDecaySlider').value = kit.hihat.decay;
+                                                document.querySelector('#hihatDecaySlider').previousElementSibling.querySelector('span').innerText = (kit.hihat.decay * 1000).toFixed(0) + 'ms';
+                                            " class="w-full bg-stone-800 text-white rounded-lg px-3 py-2 border border-stone-700 focus:border-amber-500 focus:outline-none">
+                                                <option value="808" ${studio.currentDrumKit === '808' ? 'selected' : ''}>TR-808 — Hip-Hop / Trap</option>
+                                                <option value="909" ${studio.currentDrumKit === '909' ? 'selected' : ''}>TR-909 — House / Techno</option>
+                                                <option value="acoustic" ${studio.currentDrumKit === 'acoustic' ? 'selected' : ''}>Acoustic Kit — Rock / Pop / Jazz</option>
+                                                <option value="lofi" ${studio.currentDrumKit === 'lofi' ? 'selected' : ''}>Lo-Fi Kit — Lo-Fi / Chill</option>
+                                                <option value="breakbeat" ${studio.currentDrumKit === 'breakbeat' ? 'selected' : ''}>Breakbeat — Funk / Breaks / DnB</option>
+                                            </select>
+                                            <p class="text-xs text-stone-500 mt-2">Select a kit preset or customize individual drums below</p>
+                                        </div>
+
                                         <!-- KICK CONTROLS -->
                                         <div class="bg-stone-900 rounded-xl p-4 border border-stone-800">
                                             <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
@@ -5772,13 +7669,13 @@
                                             <div class="grid grid-cols-2 gap-3">
                                                 <div class="flex flex-col">
                                                     <label class="text-[10px] font-bold uppercase text-stone-500 mb-1">Pitch <span class="text-cyan-400">${studio.kickPitch}Hz</span></label>
-                                                    <input type="range" min="30" max="300" step="1" value="${studio.kickPitch}"
+                                                    <input type="range" id="kickPitchSlider" min="30" max="300" step="1" value="${studio.kickPitch}"
                                                         oninput="studio.kickPitch = parseFloat(this.value); this.previousElementSibling.querySelector('span').innerText = this.value + 'Hz'"
                                                         class="w-full accent-orange-500 h-1 bg-stone-800 rounded-lg appearance-none"/>
                                                 </div>
                                                 <div class="flex flex-col">
                                                     <label class="text-[10px] font-bold uppercase text-stone-500 mb-1">Decay <span class="text-cyan-400">${(studio.kickDecay * 1000).toFixed(0)}ms</span></label>
-                                                    <input type="range" min="0.05" max="2" step="0.01" value="${studio.kickDecay}"
+                                                    <input type="range" id="kickDecaySlider" min="0.05" max="2" step="0.01" value="${studio.kickDecay}"
                                                         oninput="studio.kickDecay = parseFloat(this.value); this.previousElementSibling.querySelector('span').innerText = (this.value * 1000).toFixed(0) + 'ms'"
                                                         class="w-full accent-orange-500 h-1 bg-stone-800 rounded-lg appearance-none"/>
                                                 </div>
@@ -5794,19 +7691,19 @@
                                             <div class="grid grid-cols-3 gap-3">
                                                 <div class="flex flex-col">
                                                     <label class="text-[10px] font-bold uppercase text-stone-500 mb-1">Pitch <span class="text-cyan-400">${studio.snarePitch}Hz</span></label>
-                                                    <input type="range" min="100" max="400" step="1" value="${studio.snarePitch}"
+                                                    <input type="range" id="snarePitchSlider" min="100" max="400" step="1" value="${studio.snarePitch}"
                                                         oninput="studio.snarePitch = parseFloat(this.value); this.previousElementSibling.querySelector('span').innerText = this.value + 'Hz'"
                                                         class="w-full accent-red-500 h-1 bg-stone-800 rounded-lg appearance-none"/>
                                                 </div>
                                                 <div class="flex flex-col">
                                                     <label class="text-[10px] font-bold uppercase text-stone-500 mb-1">Decay <span class="text-cyan-400">${(studio.snareDecay * 1000).toFixed(0)}ms</span></label>
-                                                    <input type="range" min="0.05" max="1" step="0.01" value="${studio.snareDecay}"
+                                                    <input type="range" id="snareDecaySlider" min="0.05" max="1" step="0.01" value="${studio.snareDecay}"
                                                         oninput="studio.snareDecay = parseFloat(this.value); this.previousElementSibling.querySelector('span').innerText = (this.value * 1000).toFixed(0) + 'ms'"
                                                         class="w-full accent-red-500 h-1 bg-stone-800 rounded-lg appearance-none"/>
                                                 </div>
                                                 <div class="flex flex-col">
                                                     <label class="text-[10px] font-bold uppercase text-stone-500 mb-1">Noise Mix <span class="text-cyan-400">${Math.round(studio.snareNoiseBalance * 100)}%</span></label>
-                                                    <input type="range" min="0" max="1" step="0.01" value="${studio.snareNoiseBalance}"
+                                                    <input type="range" id="snareNoiseSlider" min="0" max="1" step="0.01" value="${studio.snareNoiseBalance}"
                                                         oninput="studio.snareNoiseBalance = parseFloat(this.value); this.previousElementSibling.querySelector('span').innerText = Math.round(this.value * 100) + '%'"
                                                         class="w-full accent-red-500 h-1 bg-stone-800 rounded-lg appearance-none"/>
                                                 </div>
@@ -5822,13 +7719,13 @@
                                             <div class="grid grid-cols-2 gap-3">
                                                 <div class="flex flex-col">
                                                     <label class="text-[10px] font-bold uppercase text-stone-500 mb-1">Pitch <span class="text-cyan-400">${studio.hihatPitch}Hz</span></label>
-                                                    <input type="range" min="4000" max="12000" step="100" value="${studio.hihatPitch}"
+                                                    <input type="range" id="hihatPitchSlider" min="4000" max="12000" step="100" value="${studio.hihatPitch}"
                                                         oninput="studio.hihatPitch = parseFloat(this.value); this.previousElementSibling.querySelector('span').innerText = this.value + 'Hz'"
                                                         class="w-full accent-yellow-500 h-1 bg-stone-800 rounded-lg appearance-none"/>
                                                 </div>
                                                 <div class="flex flex-col">
                                                     <label class="text-[10px] font-bold uppercase text-stone-500 mb-1">Decay <span class="text-cyan-400">${(studio.hihatDecay * 1000).toFixed(0)}ms</span></label>
-                                                    <input type="range" min="0.02" max="0.5" step="0.01" value="${studio.hihatDecay}"
+                                                    <input type="range" id="hihatDecaySlider" min="0.02" max="0.5" step="0.01" value="${studio.hihatDecay}"
                                                         oninput="studio.hihatDecay = parseFloat(this.value); this.previousElementSibling.querySelector('span').innerText = (this.value * 1000).toFixed(0) + 'ms'"
                                                         class="w-full accent-yellow-500 h-1 bg-stone-800 rounded-lg appearance-none"/>
                                                 </div>
@@ -6214,6 +8111,7 @@
             else if (appState.view === 'challenge') content = renderChallenge();
             else if (appState.view === 'jam') content = renderJamStation();
             else if (appState.view === 'studio') content = renderStudio();
+            else if (appState.view === 'mpc') content = renderMPC();
             
             const main = document.createElement('main');
             main.className = 'flex-grow';
@@ -6228,6 +8126,16 @@
             renderToolbar();
 
             if (appState.view === 'challenge') startSpin();
+            
+            // Draw MPC Waveform if visible
+            if (appState.view === 'mpc' && studio.mpc.selectedPad.buffer) {
+                studio.mpc.drawWaveform(document.getElementById('mpc-waveform'), studio.mpc.selectedPad.buffer, studio.mpc.selectedPad.params);
+            }
+            
+            // Draw Looper Waveform if visible
+            if (appState.studioModule === 'looper' && appState.view === 'studio') {
+                studio.drawLooperWaveform();
+            }
         }
 
         render();
