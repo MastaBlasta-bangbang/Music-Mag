@@ -1407,9 +1407,9 @@
                 // Looper State
                 this.isRecording = false;
                 this.sections = [
-                    { id: 'A', name: 'Part A', buffers: [], duration: 0 },
-                    { id: 'B', name: 'Part B', buffers: [], duration: 0 },
-                    { id: 'C', name: 'Part C', buffers: [], duration: 0 }
+                    { id: 'A', name: 'Part A', buffers: [], duration: 0, masterStartTime: 0, looperNodes: [] },
+                    { id: 'B', name: 'Part B', buffers: [], duration: 0, masterStartTime: 0, looperNodes: [] },
+                    { id: 'C', name: 'Part C', buffers: [], duration: 0, masterStartTime: 0, looperNodes: [] }
                 ];
                 this.activeSectionIndex = 0;
                 
@@ -1422,9 +1422,14 @@
                     get: () => this.sections[this.activeSectionIndex].duration,
                     set: (v) => this.sections[this.activeSectionIndex].duration = v
                 });
-
-                this.looperNodes = []; // Playing source nodes
-                this.masterStartTime = 0;
+                Object.defineProperty(this, 'masterStartTime', { 
+                    get: () => this.sections[this.activeSectionIndex].masterStartTime,
+                    set: (v) => this.sections[this.activeSectionIndex].masterStartTime = v
+                });
+                Object.defineProperty(this, 'looperNodes', { 
+                    get: () => this.sections[this.activeSectionIndex].looperNodes,
+                    set: (v) => this.sections[this.activeSectionIndex].looperNodes = v
+                });
                 this.recordSamples = [];
                 this.processor = null;
                 this.looperStream = null;
@@ -2278,8 +2283,22 @@
                     this.stopRecording();
                 }
                 
-                this.stopPlayback();
+                // Stop playback of ALL sections to prevent timeline bleeding
+                this.stopAllSections();
+                
+                // Switch to new section
                 this.activeSectionIndex = index;
+                
+                // Auto-start playback if the new section has content
+                const newSection = this.sections[index];
+                if (newSection.buffers.length > 0) {
+                    // Small delay to ensure clean switch
+                    setTimeout(() => {
+                        if (this.activeSectionIndex === index) { // Make sure we didn't switch again
+                            this.startPlayback();
+                        }
+                    }, 50);
+                }
                 
                 // If we were recording, the mic state should be preserved
                 // The next recording will automatically reconnect via requestMicAccess()
@@ -2545,6 +2564,10 @@
 
             async startRecording() {
                 try {
+                    console.log(`Starting recording for section ${this.sections[this.activeSectionIndex].name} (index: ${this.activeSectionIndex})`);
+                    console.log(`RecordMic: ${this.recordMic}, RecordSynth: ${this.recordSynth}`);
+                    console.log(`Current section duration: ${this.loopDuration}, buffers: ${this.loopBuffers.length}`);
+                    
                     // Ensure main context is ready
                     if (!window.audio) window.audio = new SoundEngine();
                     await window.audio.init();
@@ -2824,7 +2847,13 @@
                 }
 
                 const totalSamples = this.recordSamples.reduce((acc, val) => acc + val.length, 0);
-                if (totalSamples === 0) return;
+                console.log(`Recording finished. Total samples: ${totalSamples}, Record chunks: ${this.recordSamples.length}`);
+                console.log(`Section: ${this.sections[this.activeSectionIndex].name}, Buffers before: ${this.loopBuffers.length}`);
+                
+                if (totalSamples === 0) {
+                    console.warn("No audio samples recorded!");
+                    return;
+                }
 
                 const buffer = this.audioCtx.createBuffer(1, totalSamples, this.audioCtx.sampleRate);
                 const data = buffer.getChannelData(0);
@@ -2847,11 +2876,14 @@
                 }
 
                 if (this.loopDuration === 0) {
+                    console.log(`Creating first loop for section ${this.sections[this.activeSectionIndex].name}, duration: ${buffer.duration}`);
                     this.loopDuration = buffer.duration;
                     this.loopBuffers.push(buffer);
                     this.masterStartTime = this.audioCtx.currentTime;
+                    console.log(`Section now has ${this.loopBuffers.length} buffers`);
                     this.startPlayback();
                 } else {
+                    console.log(`Adding overdub to existing loop, target duration: ${this.loopDuration}`);
                     const targetLength = Math.floor(this.loopDuration * this.audioCtx.sampleRate);
                     const syncedBuffer = this.audioCtx.createBuffer(1, targetLength, this.audioCtx.sampleRate);
                     const syncedData = syncedBuffer.getChannelData(0);
@@ -2865,6 +2897,7 @@
                     }
                     
                     this.loopBuffers.push(syncedBuffer);
+                    console.log(`Section now has ${this.loopBuffers.length} buffers`);
                     this.startPlayback();
                 }
                 render();
@@ -2905,6 +2938,19 @@
                     try { n.stop(); } catch(e) {}
                 });
                 this.looperNodes = [];
+            }
+
+            stopAllSections() {
+                this.isPlayingSequence = false;
+                if (this.sequenceTimer) clearTimeout(this.sequenceTimer);
+                
+                // Stop all sections, not just the current one
+                this.sections.forEach(section => {
+                    section.looperNodes.forEach(n => {
+                        try { n.stop(); } catch(e) {}
+                    });
+                    section.looperNodes = [];
+                });
             }
 
             undoLastLayer() {
