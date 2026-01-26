@@ -1440,6 +1440,7 @@
                 
                 // Song Mode
                 this.songSequence = []; // ['A', 'A', 'B', 'A']
+                this.sequenceNodes = [];
                 this.isPlayingSequence = false;
                 this.sequenceIndex = 0;
                 this.nextSectionTime = 0;
@@ -2277,6 +2278,13 @@
             }
 
             switchToSection(index) {
+                console.log(`Switching to section index: ${index} (Current: ${this.activeSectionIndex})`);
+                
+                // Ensure context is running
+                if (this.audioCtx && this.audioCtx.state === 'suspended') {
+                    this.audioCtx.resume();
+                }
+
                 // If currently recording, stop recording first but preserve mic state
                 const wasRecording = this.isRecording;
                 if (wasRecording) {
@@ -2288,6 +2296,7 @@
                 
                 // Switch to new section
                 this.activeSectionIndex = index;
+                console.log(`Active section is now: ${this.sections[index].name}`);
                 
                 // Auto-start playback if the new section has content
                 const newSection = this.sections[index];
@@ -2346,7 +2355,7 @@
                          source.buffer = buffer;
                          source.connect(this.looperGain);
                          source.start(startTime);
-                         this.looperNodes.push(source);
+                         this.sequenceNodes.push(source);
                     });
                     
                     this.nextSectionTime = startTime + section.duration;
@@ -2373,6 +2382,15 @@
             stopSongSequence() {
                 this.isPlayingSequence = false;
                 if (this.sequenceTimer) clearTimeout(this.sequenceTimer);
+                
+                // Stop sequence nodes
+                if (this.sequenceNodes) {
+                    this.sequenceNodes.forEach(n => {
+                        try { n.stop(); } catch(e) {}
+                    });
+                    this.sequenceNodes = [];
+                }
+
                 this.stopPlayback(); 
             }
 
@@ -2626,8 +2644,8 @@
                     this.isRecording = true;
                     this.recordStartTime = this.audioCtx.currentTime;
                     
-                    const mixerSource = this.audioCtx.createMediaStreamSource(this.looperStream);
-                    mixerSource.connect(this.processor);
+                    this.mixerSource = this.audioCtx.createMediaStreamSource(this.looperStream);
+                    this.mixerSource.connect(this.processor);
                     
                     const silentGain = this.audioCtx.createGain();
                     silentGain.gain.value = 0; 
@@ -2825,30 +2843,26 @@
                     this.monitorNode = null;
                 }
                 
-                // DON'T disconnect micSource completely - this breaks subsequent recordings
-                // The micSource should persist across recordings for the same section
-                // Only disconnect from the FX chain temporarily, it will be reconnected in startRecording
                 if (this.micSource && this.recordMic) {
                     try {
-                        // Only disconnect from FX chain, keep micSource alive
                         if (window.audio && window.audio.fxNode) {
                             this.micSource.disconnect(window.audio.fxNode);
                         }
                     } catch(e) {
-                        // If specific disconnect fails, don't disconnect everything
                         console.warn("Could not disconnect mic from FX chain:", e);
                     }
                 }
                 
-                // Stop Looper/Mixer Stream (the intermediate mix)
-                if (this.looperStream) {
-                    this.looperStream.getTracks().forEach(t => t.stop());
-                    this.looperStream = null;
+                if (this.mixerSource) {
+                    this.mixerSource.disconnect();
+                    this.mixerSource = null;
                 }
+                this.looperStream = null;
 
                 const totalSamples = this.recordSamples.reduce((acc, val) => acc + val.length, 0);
-                console.log(`Recording finished. Total samples: ${totalSamples}, Record chunks: ${this.recordSamples.length}`);
-                console.log(`Section: ${this.sections[this.activeSectionIndex].name}, Buffers before: ${this.loopBuffers.length}`);
+                const currentSection = this.sections[this.activeSectionIndex];
+                
+                console.log(`Recording finished for ${currentSection.name}. Samples: ${totalSamples}`);
                 
                 if (totalSamples === 0) {
                     console.warn("No audio samples recorded!");
@@ -2863,32 +2877,29 @@
                     offset += chunk.length;
                 }
 
-                // --- FIX: Apply Micro-Fades to prevent Pops/Clicks ---
-                const fadeLen = Math.floor(0.01 * this.audioCtx.sampleRate); // 10ms fade
+                // Micro-Fades
+                const fadeLen = Math.floor(0.01 * this.audioCtx.sampleRate);
                 if (data.length > fadeLen * 2) {
                     for (let i = 0; i < fadeLen; i++) {
                         const gain = i / fadeLen;
-                        // Fade In
                         data[i] *= gain;
-                        // Fade Out
                         data[data.length - 1 - i] *= gain;
                     }
                 }
 
-                if (this.loopDuration === 0) {
-                    console.log(`Creating first loop for section ${this.sections[this.activeSectionIndex].name}, duration: ${buffer.duration}`);
-                    this.loopDuration = buffer.duration;
-                    this.loopBuffers.push(buffer);
-                    this.masterStartTime = this.audioCtx.currentTime;
-                    console.log(`Section now has ${this.loopBuffers.length} buffers`);
-                    this.startPlayback();
+                if (currentSection.duration === 0) {
+                    console.log(`Creating NEW loop for ${currentSection.name}`);
+                    currentSection.duration = buffer.duration;
+                    currentSection.buffers.push(buffer);
+                    currentSection.masterStartTime = this.audioCtx.currentTime;
+                    this.startPlayback(currentSection);
                 } else {
-                    console.log(`Adding overdub to existing loop, target duration: ${this.loopDuration}`);
-                    const targetLength = Math.floor(this.loopDuration * this.audioCtx.sampleRate);
+                    console.log(`Overdubbing on ${currentSection.name}`);
+                    const targetLength = Math.floor(currentSection.duration * this.audioCtx.sampleRate);
                     const syncedBuffer = this.audioCtx.createBuffer(1, targetLength, this.audioCtx.sampleRate);
                     const syncedData = syncedBuffer.getChannelData(0);
                     
-                    const startOffset = (this.recordStartTime - this.masterStartTime) % this.loopDuration;
+                    const startOffset = (this.recordStartTime - currentSection.masterStartTime) % currentSection.duration;
                     const startSample = Math.floor(startOffset * this.audioCtx.sampleRate);
                     
                     for (let i = 0; i < data.length; i++) {
@@ -2896,53 +2907,92 @@
                         syncedData[targetIdx] += data[i];
                     }
                     
-                    this.loopBuffers.push(syncedBuffer);
-                    console.log(`Section now has ${this.loopBuffers.length} buffers`);
-                    this.startPlayback();
+                    currentSection.buffers.push(syncedBuffer);
+                    this.startPlayback(currentSection);
                 }
                 render();
             }
 
-            startPlayback() {
-                this.stopPlayback();
+            startPlayback(section = null) {
+                if (this.isPlayingSequence) {
+                    this.stopSongSequence();
+                }
+                
+                // Use provided section or current active section
+                const targetSection = section || this.sections[this.activeSectionIndex];
+                
+                // Stop existing nodes for THIS section to avoid duplicates
+                this.stopPlayback(targetSection);
+
                 if (!this.looperGain) {
                     this.looperGain = this.audioCtx.createGain();
                     this.looperGain.gain.value = this.loopVolume;
                     this.looperGain.connect(this.audioCtx.destination);
                 }
-                this.loopBuffers.forEach(buffer => {
-                    this.addBufferToPlayback(buffer);
+                
+                console.log(`Starting playback for ${targetSection.name}. Buffers: ${targetSection.buffers.length}`);
+                
+                targetSection.buffers.forEach(buffer => {
+                    this.addBufferToPlayback(buffer, targetSection);
                 });
                 this.updateLooperProgress();
             }
 
-            addBufferToPlayback(buffer) {
+            addBufferToPlayback(buffer, section) {
                 if (!this.audioCtx) return;
+                
+                // Validate section duration
+                if (!section.duration || section.duration <= 0) {
+                    console.warn("Cannot play buffer: Section duration is invalid", section);
+                    return;
+                }
+
                 const source = this.audioCtx.createBufferSource();
                 source.buffer = buffer;
                 source.loop = true;
                 
                 const now = this.audioCtx.currentTime;
-                const elapsed = now - this.masterStartTime;
-                const offset = elapsed % this.loopDuration;
+                // Ensure positive elapsed time
+                let elapsed = now - section.masterStartTime;
+                if (elapsed < 0) elapsed = 0; 
+                
+                const offset = elapsed % section.duration;
                 
                 source.connect(this.looperGain);
-                source.start(0, offset);
-                this.looperNodes.push(source);
+                
+                try {
+                    source.start(0, offset);
+                    section.looperNodes.push(source);
+                } catch (e) {
+                    console.error("Error starting loop source:", e);
+                }
             }
 
-            stopPlayback() {
+            stopPlayback(section = null) {
                 this.isPlayingSequence = false;
                 if (this.sequenceTimer) clearTimeout(this.sequenceTimer);
-                this.looperNodes.forEach(n => {
-                    try { n.stop(); } catch(e) {}
-                });
-                this.looperNodes = [];
+                
+                const targetSection = section || this.sections[this.activeSectionIndex];
+                
+                if (targetSection && targetSection.looperNodes) {
+                    targetSection.looperNodes.forEach(n => {
+                        try { n.stop(); } catch(e) {}
+                    });
+                    targetSection.looperNodes = [];
+                }
             }
 
             stopAllSections() {
                 this.isPlayingSequence = false;
                 if (this.sequenceTimer) clearTimeout(this.sequenceTimer);
+                
+                // Stop sequence nodes
+                if (this.sequenceNodes) {
+                    this.sequenceNodes.forEach(n => {
+                        try { n.stop(); } catch(e) {}
+                    });
+                    this.sequenceNodes = [];
+                }
                 
                 // Stop all sections, not just the current one
                 this.sections.forEach(section => {
